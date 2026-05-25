@@ -1,0 +1,94 @@
+# 📋 Decision Log — surround-pro
+
+יומן החלטות תכנוניות. כל החלטה משמעותית — מה הוחלט, מתי, ולמה.
+
+---
+
+## v0.1 — 2026-05-25
+
+### [D-001] בחירת פורמט פרויקט: סקריפט bash יחיד, TUI בלבד
+- **החלטה:** אין Docker. סקריפט bash מודולרי שרץ ישירות על המארח.
+- **למה:** גיא ביקש v0.1 בסיסית — להשתמש בכלי המארח, פחות סיבוכים. Docker יישקל בעתיד.
+
+### [D-002] מבנה מודולרי תחת `lib/`
+- **החלטה:** entry point יחיד (`surround-pro.sh`) שמטעין מודולים מ-`lib/` באמצעות `source`.
+- **למה:** קל לתחזוקה, כל שלב מבודד, אפשר להחליף יישום בודד בלי לשבור את השאר.
+
+### [D-003] ללא הערות בקוד
+- **החלטה:** קבצי `.sh` נשארים נקיים — בלי שורות `# comment`. הסברים בקבצי docs נפרדים.
+- **למה:** העדפה אישית של גיא — קוד שדובר בעד עצמו, תיעוד נפרד.
+
+### [D-004] מפת ערוצים — זהה ל-V3 הישן
+- **החלטה:** משתמשים בדיוק בפילטר של `surround_71_v3.sh` הקודם:
+  - FL/FR = drums highpass>250Hz (L/R split)
+  - FC = vocals mono
+  - LFE = drums lowpass<120Hz + bass mono
+  - SL/SR = other (L/R split)
+  - BL/BR = other (כפילות של SL/SR)
+- **למה:** עובד, נבדק. מפה חדשה תוצע רק אחרי שיש בסיס יציב.
+
+### [D-005] Demucs htdemucs (בסיסי), לא htdemucs_ft
+- **החלטה:** ב-v0.1 משתמשים ב-`htdemucs` הרגיל (לא ה-fine-tuned).
+- **למה:** מהיר יותר, פחות זיכרון GPU, איכות מספיק טובה ל-baseline. `htdemucs_ft` ייבחן בגרסה עתידית.
+
+### [D-006] הורדת מודלים מותנית בחומרה
+- **החלטה:** ה-script מזהה GPU ובוחר את `torch` המתאים (CUDA / ROCm / Intel xpu / CPU). הורדה ראשונה מבוצעת ע"י `uv` בזמן ריצה.
+- **למה:** אין סיבה להוריד torch+CUDA על מכונת CPU. גיא ירצה לבדוק את הסקריפט על מספר מכשירים שונים.
+
+### [D-007] לא מבצעים L/R-split לפני Demucs
+- **החלטה:** Demucs מקבל את הקלט הסטריאו המלא (לא מפצלים L ו-R לעיבוד נפרד).
+- **למה:** Demucs מאומן על stereo ומשתמש ב-cues בין הערוצים להפרדה. פיצול ל-mono ירע את האיכות. ה-stereo imaging מושג עם `channelsplit` ב-ffmpeg *אחרי* Demucs.
+- **מקור:** דיון ב-`v0.1.txt` (2026-05-25).
+
+### [D-008] תיקיית `claude/` לא ב-git
+- **החלטה:** `claude/character.md`, `rules.md`, `setting.md`, `brief.md` — `.gitignore`d.
+- **למה:** קבצי הוראות פנימיים בין גיא לסמית', לא חלק מהפרויקט הציבורי.
+
+### [D-009] שמירה על תכונות מהסקריפט הדוגמה
+- **החלטה:** `--cookies-from-browser`, תמיכה בעברית, unique filename, `$RANDOM` ב-WORK_DIR, batch של תיקייה — כל אלה נשמרים.
+- **למה:** אומתו בעבר, אין סיבה להמציא מחדש.
+
+### [D-010] git init / commit — דחוי
+- **החלטה:** לא לעשות `git init` עד שהסקריפט נבדק ועובד על שיר אחד לפחות.
+- **למה:** הימנעות מ-commit של קוד שבור. ההיסטוריה הראשונה תהיה "v0.1 — working".
+
+### [D-011] Auto-install של תלויות חסרות
+- **החלטה:** הסקריפט מתקין אוטומטית את כל מה שחסר: `uv`, `yt-dlp`, `ffmpeg`, `rocm-hip-runtime` (אם AMD).
+- **למה:** דרישת גיא — המשתמשים לא טכניים. שלב 1 ("סריקת חומרה + הכנת המחשב") עושה את ההכנה במלואה.
+- **מודול:** `lib/install-deps.sh`. סודו דרוש (`sudo pacman`).
+
+### [D-012] זיהוי דפדפן דינמי ל-cookies
+- **החלטה:** במקום `BROWSER_FOR_COOKIES=chrome` קשיח, יש זיהוי אוטומטי בשלב 1: chrome → chromium → brave → firefox → vivaldi → opera. אם אין דפדפן — `yt-dlp` רץ בלי cookies.
+- **למה:** משתמשים שונים עם דפדפנים שונים. הסקריפט צריך להסתדר.
+
+### [D-013] Fallback אוטומטי מ-AMD GPU ל-CPU
+- **החלטה:** אם טעינת torch+ROCm נכשלת ב-runtime → fallback ל-CPU.
+- **למה:** ב-2026-05-25 הריצה הראשונה על מכונת הבדיקה של גיא חשפה בעיה: PyTorch+ROCm wheel מגיע עם `libamdhip64.so` שיש לו executable stack flag.
+- **כרגע:** CPU mode עובד תמיד. נשמר כ-fallback אחרי D-014.
+
+### [D-014] תיקון אוטומטי של execstack ב-AMD ROCm libs
+- **החלטה:** מתקינים `patchelf` ו-`binutils` (readelf) יחד עם `rocm-hip-runtime`. אחרי שuv מתקין torch+rocm, סורקים את uv cache, מוצאים `libamdhip64.so` ו-`libhiprtc.so` עם דגל `RWE`, ומריצים `patchelf --clear-execstack` להפוך ל-`RW`.
+- **למה:** ב-2026-05-25 הוכח לוקלית: אחרי patchelf, `torch.cuda.is_available()` מחזיר True על AMD GPU. הבעיה היא בדגל ELF program header, לא ב-runtime עצמו.
+- **טכני:** `RWE` = Read/Write/eXecute. הקרנל החדש דורש W^X (write-xor-execute) עבור shared libs. patchelf מוריד את ה-X.
+- **flow:** prefetch_demucs_model מנסה GPU. אם נכשל, מריץ patchelf, מנסה שוב. רק אם זה גם נכשל → CPU fallback (D-013).
+- **השלכה ל-v0.2:** אם יום אחד PyTorch ROCm wheels יבואו תקינים, פשוט patchelf לא ימצא RWE libs ויחזיר 0 — לא יזיק.
+
+### [D-016] בדיקת GPU compute אמיתית + HSA_OVERRIDE_GFX_VERSION
+- **החלטה:** לא מסתפקים ב-`torch.cuda.is_available()` (יחזיר True גם אם הקרנלים לא תואמים). מבצעים compute אמיתי: `torch.zeros(16, device='cuda') + 1` ולוודא שזה מצליח. אם נכשל ב-AMD עם `HIP error: invalid device function` → מנסים `HSA_OVERRIDE_GFX_VERSION=10.3.0`. רק אחרי שגם זה לא עזר → CPU fallback.
+- **למה:** ב-2026-05-25 על מכונת הבדיקה (RX 6700 XT, gfx1031) torch קומפיל בלי kernels ל-gfx1031, רק ל-gfx1030 וכו'. HSA_OVERRIDE מורה לדריבר להשתמש ב-gfx1030 kernels — RX 6700 ו-RX 6800 קרובים מספיק שזה עובד.
+- **GPUs שצפויים להזדקק ל-override:**
+  - Navi 22 (RX 6700/6700 XT/6750 XT, RX 6800M) — gfx1031 → 10.3.0
+  - Navi 23 (RX 6600/6600 XT/6650 XT) — gfx1032 → 10.3.0
+  - אולי גם Navi 24 (RX 6400/6500 XT) — gfx1034 → 10.3.0
+- **השלכה:** האוטומציה עכשיו מטפלת בקפיצת GPU "טוענים אבל לא עובדים" — common case ב-AMD.
+
+### [D-015] Pipeline משולש לאיכות הפרדה: BS-RoFormer → De-Echo → Demucs
+- **החלטה:** ההפרדה לא רק Demucs htdemucs_ft — מתחילים ב-audio-separator עם **BS-RoFormer Vocals** (`model_bs_roformer_ep_368_sdr_12.9628.ckpt`) כדי להוציא את כל הזמר ו-effects בנפרד, אחר כך **UVR-DeEcho-DeReverb** על הזמר כדי להפריד dry vocal מ-echo tail, ורק אז Demucs רץ על ה-instrumental.
+- **למה:** ב-2026-05-25 גיא ציין שב-htdemucs_ft הזמר עם echo בולט ברמקולים האחוריים — Demucs מזהה את ה-echo ככלי נגינה. BS-RoFormer מאומן ספציפית על שירה אנושית עם effects ומוציא את הזמר נקי, כולל ה-echo. הפרדת De-Echo נוספת מאפשרת לבודד את ה-echo כסטם נפרד.
+- **מיפוי 7.1 משופר:**
+  - FC = **dry_vocal** (זמר ממורכז, ללא echo)
+  - FL/FR = drums highpass (מצילות) **+ echo_tail** (echo מתפזר רחב — מימיק לאפקט המקורי)
+  - LFE = drums lowpass + bass (ללא שינוי)
+  - SL/SR/BL/BR = other (ללא שינוי, כעת ללא bleed של זמר)
+- **תלות:** `audio-separator` + `onnxruntime` (uv installs). מודלים יורדים אוטומטית בריצה ראשונה.
+- **עלות:** +~5 דק' עיבוד ב-CPU, +500MB דיסק.

@@ -1,0 +1,864 @@
+אוקי אז ככה למעשה התוכנה האת די מוכנה ועובדת ואפילו יש לי עוד כמה גירסאות שלה שגם הן עובדות 
+
+
+כרגע נתעלם מהרעיון של DOCKER וניצור תוכנה שהיא סקריפט אחד פשוט ללא GUI כאשר כל הממשק הוא בטרמינל יעני TUI 
+
+
+בגירסא זו ניצור משהו מאוד מאוד בסיסי רק כדי ליצור בסיס לשיפורים בהמשך 
+
+
+כרגע נתעלם מהרבה מאוד תוכונות ופיצ'רים שאולי נכניס בהמשך 
+כרגע נבצע את התוכנה אך ורק בשלבים הבאים בצורה פשוטה כי כבר יש לנו דוגמאות והכל אמור להיות פשוט מאוד 
+
+
+שלבי התוכנה כרגע הם 
+
+1. סריקת חומרה + טיפול בהכנת המחשב לעבודה שזה אומר הורדת מודלים והכנת סביבת העבודה
+2. טיפול בקובץ מקומי או URL - שזה אומר הורדה או העתקה לתיקית העבודה 
+3. פירוק השיר לכמה שיותר כלים וצלילים שאפשר לפרק
+4. הרכבה מחדש על פי פורמט פשוט שמיד אפרט לגביו 
+5. מחיקת שאריות עבודה + טיפול בקובץ סופי לרבות התמודדות עם שם בעברית או תווים מיוחדים
+
+מפה פשוטה
+
+FR + FL - תופים ללא שינוי
+FC - זמר
+LFE - BASS ללא שינוי
+SL + SR - תופים ללא שינוי + קולות רקע אם נצליח לפרק אותם 
+BL + BR - כל שאר הצלילים 
+
+ניצור את זה בקלות הודות לגירסאות קודמות של תוכנה זאת 
+
+הינה דוגמא לסקריפט ישן שכתבתי בעזרתך וגם בעזרת כלי בינה מלאכותית אחרים כמו GEMINI 
+
+בתכלס? התוכנה כבר מוכנה ב80% אם לא יותר 
+
+להלן הסקריפט המלא: 
+#!/bin/bash
+
+# =================================================================================
+# "התוכנה" - סקריפט מתקדם להמרת וידאו או שמע לצליל היקפי 7.1
+#
+# גירסה סופית ומתוקנת:
+# 1. מותאמת ל-Arch Linux (UV + TorchCodec).
+# 2. תמיכה מלאה בשמות קבצים בעברית.
+# 3. מנגנון חכם למניעת דריסת קבצים קיימים.
+# 4. שמירה על כל הלוגיקה המקורית (פילטרים, טיפול בתיקיות).
+# =================================================================================
+
+# --- הגדרות ---
+set -e # יציאה מיידית במקרה של שגיאה
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+cd "$SCRIPT_DIR" || exit
+
+# --- הגדרת דפדפן ל-cookies (לעקיפת בדיקת בוטים של YouTube) ---
+# ניתן לשנות ל: firefox, chrome, brave, chromium, edge, opera, vivaldi, safari
+BROWSER_FOR_COOKIES="chrome"
+
+# --- פונקציות עזר ---
+print_error() { echo -e "\e[31mשגיאה: $1\e[0m"; }
+print_info() { echo -e "\e[36mמידע: $1\e[0m"; }
+print_success() { echo -e "\e[32mהצלחה: $1\e[0m"; }
+
+# פונקציה למציאת שם קובץ פנוי (למניעת דריסה)
+get_unique_filename() {
+    local base_path="$1" # נתיב מלא ללא סיומת
+    local extension="$2" # הסיומת (למשל .mkv)
+    local final_path="${base_path}${extension}"
+    local counter=1
+
+    # כל עוד הקובץ קיים, הוסף לו מספר
+    while [ -f "$final_path" ]; do
+        final_path="${base_path}_${counter}${extension}"
+        counter=$((counter + 1))
+    done
+    echo "$final_path"
+}
+
+# --- בדיקת תלויות ---
+print_info "בדיקת כלים נדרשים..."
+command -v yt-dlp >/dev/null 2>&1 || { print_error "הכלי yt-dlp אינו מותקן. יש להתקין אותו."; exit 1; }
+command -v ffmpeg >/dev/null 2>&1 || { print_error "הכלי ffmpeg אינו מותקן. יש להתקין אותו."; exit 1; }
+command -v ffprobe >/dev/null 2>&1 || { print_error "הכלי ffprobe אינו מותקן. יש להתקין אותו."; exit 1; }
+command -v uv >/dev/null 2>&1 || { print_error "הכלי uv אינו מותקן. התקן אותו באמצעות: sudo pacman -S uv"; exit 1; }
+
+print_success "כל הכלים הנדרשים קיימים."
+echo ""
+
+# =================================================================================
+# פונקציית עיבוד עבור מקור בודד (קובץ או URL)
+# =================================================================================
+process_source() {
+    local SOURCE_INPUT="$1"
+    local IS_URL=false
+    local IS_VIDEO=false
+    local SOURCE_TITLE=""
+    local SAFE_TITLE=""
+    local WORK_DIR=""
+    local ORIGINAL_MEDIA_FILE="original_media"
+    local ORIGINAL_AUDIO_FILE="original_audio.wav"
+    local VIDEO_FILE="video.mp4"
+
+    # --- הכנת סביבת עבודה וזיהוי המקור ---
+    if [[ "$SOURCE_INPUT" == http* ]]; then
+        IS_URL=true
+        print_info "זוהתה כתובת URL. מאמת פרטים..."
+        SOURCE_TITLE=$(yt-dlp --cookies-from-browser "$BROWSER_FOR_COOKIES" --get-title "$SOURCE_INPUT")
+        if yt-dlp --cookies-from-browser "$BROWSER_FOR_COOKIES" --list-formats "$SOURCE_INPUT" | grep -q 'video only'; then
+            IS_VIDEO=true
+            print_info "המקור הוא וידאו."
+        else
+            print_info "המקור הוא שמע בלבד."
+        fi
+    else
+        if [ ! -f "$SOURCE_INPUT" ]; then
+            print_error "הקובץ המקומי '$SOURCE_INPUT' אינו קיים או אינו קובץ."
+            return 1
+        fi
+        print_info "זוהה קובץ מקומי."
+        # חילוץ שם הקובץ ללא סיומת
+        SOURCE_TITLE=$(basename "$SOURCE_INPUT" | sed 's/\.[^.]*$//')
+        
+        if ffprobe -v error -select_streams v:0 -count_packets -show_entries stream=nb_read_packets -of csv=p=0 "$SOURCE_INPUT" | grep -q '[1-9]'; then
+            IS_VIDEO=true
+            print_info "המקור הוא וידאו."
+        else
+            print_info "המקור הוא שמע בלבד."
+        fi
+    fi
+
+    # === תיקון 1: תמיכה בעברית ===
+    # במקום למחוק הכל, מחליפים רק תווים שאסורים בשמות קבצים (/ \ : * ? " < > |)
+    SAFE_TITLE=$(echo "$SOURCE_TITLE" | sed 's/[/\\?%*:|"<>]/_/g' | xargs)
+    if [ -z "$SAFE_TITLE" ]; then SAFE_TITLE="output_processed"; fi
+
+    # שימוש ב-RANDOM כדי למנוע התנגשויות בתיקיות זמניות
+    WORK_DIR="${SAFE_TITLE}_7.1_Processing_${RANDOM}"
+
+    rm -rf "$WORK_DIR"
+    mkdir -p -- "$WORK_DIR"
+    
+    pushd "$WORK_DIR" > /dev/null
+
+    # --- שלב 1: הורדה/העתקה והפרדת מקורות ---
+    print_info "שלב 1/5: מכין את קובץ המקור..."
+    if [ "$IS_URL" = true ]; then
+        if [ "$IS_VIDEO" = true ]; then
+            print_info "מוריד וידאו ושמע..."
+            yt-dlp --cookies-from-browser "$BROWSER_FOR_COOKIES" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]" --output "$VIDEO_FILE" "$SOURCE_INPUT"
+            ffmpeg -i "$VIDEO_FILE" -vn -acodec pcm_s16le -ar 48000 -ac 2 "$ORIGINAL_AUDIO_FILE"
+        else
+            print_info "מוריד שמע בלבד..."
+            yt-dlp --cookies-from-browser "$BROWSER_FOR_COOKIES" -f bestaudio --extract-audio --audio-format wav --output "$ORIGINAL_AUDIO_FILE" "$SOURCE_INPUT"
+        fi
+    else # קובץ מקומי
+        cp "$SOURCE_INPUT" "$ORIGINAL_MEDIA_FILE"
+        if [ "$IS_VIDEO" = true ]; then
+            print_info "מפריד וידאו ושמע מקובץ מקומי..."
+            ffmpeg -i "$ORIGINAL_MEDIA_FILE" -vcodec copy -an "$VIDEO_FILE"
+            ffmpeg -i "$ORIGINAL_MEDIA_FILE" -vn -acodec pcm_s16le -ar 48000 -ac 2 "$ORIGINAL_AUDIO_FILE"
+        else
+            print_info "מעבד קובץ שמע מקומי..."
+            ffmpeg -i "$ORIGINAL_MEDIA_FILE" -acodec pcm_s16le -ar 48000 -ac 2 "$ORIGINAL_AUDIO_FILE"
+        fi
+    fi
+    print_success "הכנת המקור הושלמה."
+    echo ""
+
+    # --- שלב 2: הפרדת ערוצים עם Demucs (באמצעות UV) ---
+    print_info "שלב 2/5: מפריד את השמע לערוצים עם Demucs (זה עלול לקחת זמן)..."
+    DEMUCS_MODEL="htdemucs"
+    
+    # הרצת Demucs דרך UV
+    uv run --python 3.11 --with demucs --with torchcodec --with soundfile demucs -n "$DEMUCS_MODEL" -o . --filename "{stem}.{ext}" "$ORIGINAL_AUDIO_FILE"
+
+    STEMS_DIR="$DEMUCS_MODEL"
+    DRUMS_FILE="$STEMS_DIR/drums.wav"
+    VOCALS_FILE="$STEMS_DIR/vocals.wav"
+    BASS_FILE="$STEMS_DIR/bass.wav"
+    OTHER_FILE="$STEMS_DIR/other.wav"
+
+    for f in "$DRUMS_FILE" "$VOCALS_FILE" "$BASS_FILE" "$OTHER_FILE"; do
+        if [ ! -f "$f" ]; then
+            print_error "קובץ ערוץ חסר לאחר הפרדת Demucs: $f"
+            popd > /dev/null; rm -rf "$WORK_DIR"; return 1;
+        fi
+    done
+    print_success "ההפרדה לערוצים הסתיימה."
+    echo ""
+
+    # --- שלב 3: מיפוי ואיחוד ערוצים 7.1 עם FFmpeg ---
+    print_info "שלב 3/5: ממפה ומאחד את הערוצים לקובץ 7.1..."
+    PROCESSED_AUDIO_FILE="final_7.1.flac"
+
+    # הפילטר המקורי נשמר במדויק
+    ffmpeg \
+        -i "$DRUMS_FILE" \
+        -i "$VOCALS_FILE" \
+        -i "$BASS_FILE" \
+        -i "$OTHER_FILE" \
+        -filter_complex " \
+            [0:a]asplit=2[drums_hp_in][drums_lp_in]; \
+            [drums_hp_in]highpass=f=250,channelsplit=channel_layout=stereo[drums_l][drums_r]; \
+            [drums_lp_in]lowpass=f=120,pan=mono|c0=0.5*c0+0.5*c1[drums_bass_mono]; \
+            [2:a]pan=mono|c0=0.5*c0+0.5*c1[bass_mono]; \
+            [drums_bass_mono][bass_mono]amix=inputs=2[lfe]; \
+            [1:a]pan=mono|c0=0.5*c0+0.5*c1[vocals_mono]; \
+            [3:a]channelsplit=channel_layout=stereo[other_l][other_r]; \
+            [drums_l][drums_r][vocals_mono][lfe][other_l][other_r][other_l][other_r]join=inputs=8:channel_layout=7.1:map=0.0-FL|1.0-FR|2.0-FC|3.0-LFE|4.0-SL|5.0-SR|6.0-BL|7.0-BR[out] \
+        " \
+        -map "[out]" \
+        -c:a flac -ar 48000 -sample_fmt s16 \
+        "$PROCESSED_AUDIO_FILE"
+
+    print_success "האיחוד והייצוא ל-FLAC הושלמו."
+    echo ""
+
+    # --- שלב 4: איחוד סופי וניקיון ---
+    # יציאה מתיקיית העבודה כדי לבדוק שמות קבצים בתיקייה הראשית
+    popd > /dev/null
+
+    local FINAL_EXT
+    if [ "$IS_VIDEO" = true ]; then
+        FINAL_EXT=".mkv"
+    else
+        FINAL_EXT=".flac"
+    fi
+
+    # === תיקון 2: יצירת שם קובץ ייחודי (למניעת דריסה) ===
+    # ../${SAFE_TITLE}_7.1  --> הנתיב בתיקייה המקורית
+    local TARGET_BASE_NAME="../${SAFE_TITLE}_7.1"
+    local FINAL_OUTPUT_FILE
+    FINAL_OUTPUT_FILE=$(get_unique_filename "$TARGET_BASE_NAME" "$FINAL_EXT")
+    
+    # חזרה לתיקיית העבודה לביצוע הפעולות האחרונות
+    pushd "$WORK_DIR" > /dev/null
+
+    if [ "$IS_VIDEO" = true ]; then
+        print_info "שלב 4/5: מאחד וידאו, שמע 7.1 ו-Metadata לקובץ MKV..."
+        local METADATA_SOURCE="$VIDEO_FILE"
+        if [ ! "$IS_URL" = true ]; then
+            METADATA_SOURCE="$SOURCE_INPUT"
+        fi
+        # כאן אנחנו משתמשים בנתיב היחסי שחושב קודם (הכולל ../)
+        ffmpeg -i "$VIDEO_FILE" -i "$PROCESSED_AUDIO_FILE" -i "$METADATA_SOURCE" -map 0:v:0 -map 1:a:0 -map_metadata 2 -c:v copy -c:a copy "$FINAL_OUTPUT_FILE"
+        print_success "קובץ MKV סופי נוצר."
+    else
+        print_info "שלב 4/5: מייצא קובץ שמע סופי..."
+        mv "$PROCESSED_AUDIO_FILE" "$FINAL_OUTPUT_FILE"
+        print_success "קובץ FLAC סופי נוצר."
+    fi
+    echo ""
+
+    # --- שלב 5: ניקיון ---
+    print_info "שלב 5/5: מנקה קבצים זמניים..."
+    popd > /dev/null
+    rm -r "$WORK_DIR"
+    print_success "הניקיון הסתיים."
+    
+    local full_output_path
+    full_output_path=$(readlink -f "$FINAL_OUTPUT_FILE")
+    print_info "הקובץ הסופי נשמר ב: $full_output_path"
+}
+
+# =================================================================================
+# לוגיקת הרצה ראשית
+# =================================================================================
+
+# --- שלב 1: קבלת קלט מהמשתמש ---
+read -p "הזן את כתובת ה-URL, נתיב לקובץ, או נתיב לתיקיה: " USER_INPUT
+if [ -z "$USER_INPUT" ]; then
+    print_error "לא הוכנס קלט."
+    exit 1
+fi
+
+# --- בדיקת סוג הקלט והרצת העיבוד ---
+if [ -d "$USER_INPUT" ]; then
+    ABS_DIR_PATH=$(readlink -f -- "$USER_INPUT")
+    print_info "זוהתה תיקיה. מעבד את כל הקבצים בתוכה..."
+    
+    # שימוש ב-find כדי למצוא קבצים באופן בטוח (גם עם שמות מיוחדים)
+    file_count=$(find "$ABS_DIR_PATH" -maxdepth 1 -type f | wc -l)
+    if [ "$file_count" -eq 0 ]; then
+        print_error "לא נמצאו קבצים בתיקיה '$ABS_DIR_PATH'."
+        exit 1
+    fi
+    
+    processed_count=0
+    while IFS= read -r -d $'' file; do
+        processed_count=$((processed_count + 1))
+        echo ""
+        print_info "=================================================="
+        print_info "מתחיל עיבוד קובץ $processed_count מתוך $file_count: $(basename "$file")"
+        print_info "=================================================="
+        process_source "$file"
+        print_success "העיבוד עבור $(basename "$file") הושלם."
+    done < <(find "$ABS_DIR_PATH" -maxdepth 1 -type f -print0)
+
+    echo ""
+    print_success "✅ העיבוד של כל $file_count הקבצים בתיקיה הושלם."
+
+elif [[ "$USER_INPUT" == http* ]]; then
+    process_source "$USER_INPUT"
+    echo ""
+    print_success "✅ התהליך כולו הושלם!"
+
+elif [ -f "$USER_INPUT" ]; then
+    ABS_FILE_PATH=$(readlink -f -- "$USER_INPUT")
+    process_source "$ABS_FILE_PATH"
+    echo ""
+    print_success "✅ התהליך כולו הושלם!"
+else
+    print_error "הקלט '$USER_INPUT' אינו קובץ, תיקיה או URL חוקיים."
+    exit 1
+fi
+
+
+===========================================================================
+| תגובה — סמית' (Agent Smith) | קריאה והבנה | תאריך: 2026-05-25         |
+===========================================================================
+
+קראתי את כל הקובץ, כולל הסקריפט הדוגמה. מסכם הבנה ומעלה שאלות לפני
+שאני כותב קוד — לפי הכלל של "ללא יוזמה לא מאושרת".
+
+
+-----------------------------------
+1. מה הבנתי שצריך לבנות ב-v0.1
+-----------------------------------
+
+* סקריפט bash אחד — בלי Docker, בלי GUI, רק TUI.
+* בסיס מינימלי שניתן להרחיב בהמשך — לא overengineering.
+* חמישה שלבים:
+  (1) סריקת חומרה + הכנת סביבת עבודה (מודלים, venv).
+  (2) טיפול בקלט: URL או קובץ מקומי.
+  (3) פירוק לכמה שיותר stems.
+  (4) הרכבה מחדש לפי מפת v0.1 (פשוטה).
+  (5) ניקוי + טיפול בקובץ סופי (כולל שמות בעברית).
+
+* מפת v0.1:
+    FR + FL   = drums (ללא שינוי)
+    FC        = vocals
+    LFE       = bass (ללא שינוי)
+    SL + SR   = drums (ללא שינוי) + backing vocals (אם נצליח להפריד)
+    BL + BR   = all other sounds
+
+
+-----------------------------------
+2. ההבדלים בין הסקריפט הדוגמה למפת v0.1
+-----------------------------------
+
+הסקריפט הדוגמה היה מקובץ ל-v3 קודמת, ויש שינויים מהותיים במפה:
+
+| ערוץ      | בסקריפט הדוגמה              | ב-v0.1 לפי גיא           |
+|-----------|------------------------------|--------------------------|
+| FL / FR   | drums highpass >250Hz       | drums מלאים, ללא סינון  |
+| FC        | vocals mono                  | vocals (כנראה mono?)    |
+| LFE       | drums lowpass + bass mixed   | bass בלבד               |
+| SL / SR   | drums highpass (split L/R)   | drums מלאים + backing   |
+| BL / BR   | other (split L/R) — duplicate| "all other sounds"      |
+
+המשמעות: עיקר הפילטרים של ffmpeg משתנה. הצרת הסקריפט תהיה הרבה יותר פשוטה
+(כי אין highpass/lowpass), אבל יש לחשוב על כמה דברים — ראה שאלות.
+
+
+-----------------------------------
+3. שאלות הבהרה לפני קוד
+-----------------------------------
+
+[A] כפילות drums ב-FL/FR וגם ב-SL/SR
+    המפה אומרת: drums מלאים גם בקדמה (FL/FR) וגם בצדדים (SL/SR).
+    זה אומר ש"אותו אודיו תופים" מתפזר בארבעה ערוצים — מה שייצור "שדה תופים
+    רחב" בחדר. שתי שאלות:
+    1. זאת הכוונה? (כן/לא)
+    2. אם כן, האם השמאל של ה-drums.wav הולך גם ל-FL וגם ל-SL?
+       (זאת אומרת stereo identical) — או שאתה רוצה איזשהו פיצול אקטיבי
+       בין הקדמה לצדדים?
+
+[B] backing vocals — האם להפריד או לוותר ב-v0.1?
+    המפה אומרת "backing vocals אם נצליח להפריד אותם".
+    שתי אפשרויות:
+    (1) להוסיף שלב נוסף עם audio-separator + MelBand Karaoke
+        (קיים בקוד הישן של surround_71_v3.sh — עובד טוב).
+        זה מוסיף ~30 שניות לעיבוד, ועוד תלות פייתון.
+    (2) לדלג ב-v0.1 — SL/SR יקבלו רק drums, ה-backing נכנס ל-BL/BR
+        ביחד עם other (כלומר נופל בערוצי "all other sounds").
+
+    איזה מהאופציות? (אני נוטה ל-1 כי הקוד כבר קיים בגרסה הישנה,
+    אבל זה הוספה שמסבכת — תחליט.)
+
+[C] "All other sounds" ב-BL/BR
+    אני מבין: זה ה-stem "other.wav" של Demucs (כל מה שלא vocals/drums/bass).
+    כולל גיטרות, סינתים, מקלדות, מיתרים, כלי נשיפה — הכל יחד.
+    סטריאו מלא L/R, או mono? (בסקריפט הדוגמה היה stereo split.)
+
+[D] FC — vocals stereo או mono?
+    הסקריפט הישן עשה pan=mono (מערבב L+R לתעלה אחת). זה הסטנדרט ל-FC
+    בקולנוע. נשאר כך?
+
+[E] שלב 1 — סריקת חומרה: מה בדיוק?
+    אופציות:
+    (1) רק לזהות GPU ולדווח (NVIDIA / AMD / Intel / CPU) — בלי התקנות.
+    (2) לזהות + להוריד מודלים של Demucs מראש (כדי שלא יהיו הפתעות אמצע ריצה).
+    (3) לזהות + להתקין uv אם חסר + להוריד מודלים.
+
+    כרגע הסקריפט הדוגמה עושה רק (1) פאסיבית — uv מוריד הכל בזמן ריצה.
+    מה אתה רוצה ל-v0.1?
+
+[F] איפה הסקריפט יחיה?
+    הצעה: /media/D/Guy008/Scripts/surround-pro/surround-pro.sh (שורש הפרויקט).
+    או בתוך src/?
+    תיקיות input/ ו-output/ ייוצרו ליד הסקריפט?
+
+[G] git init — עכשיו או אחרי שכבר יש קוד?
+    אני חושב שכדאי git init + commit ראשוני עכשיו (עם המבנה הריק + .gitignore),
+    ואז commit שני אחרי שהקוד יעבוד. תאשר?
+
+[H] שמירה על תכונות מהסקריפט הדוגמה
+    אני מניח שכן, אבל מאשר:
+    - --cookies-from-browser chrome (לעקיפת bot detection של YouTube) — שומר?
+    - תמיכה בתיקייה שלמה (batch) — שומר?
+    - get_unique_filename (מניעת דריסה) — שומר?
+    - SAFE_TITLE עם תמיכה בעברית — שומר?
+    - $RANDOM ב-WORK_DIR — שומר?
+
+    אם כל התשובות "כן" אז אני שומר ולא טוחן בזה זמן.
+
+
+-----------------------------------
+4. הצעה ארכיטקטונית (לאישור)
+-----------------------------------
+
+מבנה פרויקט מוצע (אם תאשר):
+
+surround-pro/
+├── surround-pro.sh         <- הסקריפט הראשי (entry point)
+├── lib/
+│   ├── detect-hardware.sh  <- שלב 1
+│   ├── handle-input.sh     <- שלב 2
+│   ├── separate-stems.sh   <- שלב 3 (Demucs + Karaoke אם תרצה)
+│   ├── build-71.sh         <- שלב 4 (ffmpeg filter_complex)
+│   └── cleanup.sh          <- שלב 5
+├── docs/
+│   └── DECISION_LOG.md
+├── input/                  <- ריק (gitignored)
+├── output/                 <- ריק (gitignored)
+├── .gitignore              <- כבר קיים
+├── README.md               <- ייכתב אחרי שהקוד עובד
+└── CHANGELOG.md            <- ייכתב אחרי שהקוד עובד
+
+[claude/ כבר קיים — לא ב-git]
+
+חלוקה מודולרית לפי השלבים. הסקריפט הראשי קורא לחלקים האחרים.
+המודולים נטענים עם `source`. ללא הערות בקוד, רק שמות פונקציות ברורים.
+
+
+-----------------------------------
+5. ממתין לתשובות
+-----------------------------------
+
+אחרי שאקבל תשובות ל-[A]-[H], אכתוב את הקוד ב-commit אחד מסודר ואחזיר
+דיווח מלא כאן בסוף הקובץ.
+
+לא ממשיך לפני שתאשר. (סטטוס: ⏸️ הושהה לאישור)
+
+
+
+
+תשובה של גיא
+-----------------------------------
+תשובות של גיא
+-----------------------------------
+לגבי פירוק והרכבה והמפה - תכלס יש לנו בסקריפט הקודם את המפה הנכונה אז אפשר ללכת איתה בדיוק כפי שהיא כרגע 
+
+לגבי סריקת חומרה והורדת מודלים אני רוצה להשקיע כרגע בחלק הזה וגם לבצע את הבדיקות ממספר מחשבים עם חומרות שונות כדי לוודא שהשלב הזה עובד בכל מחשב כמו שצריך 
+
+לגבי הורדת מודלים - אני רוצה את הורדת המודלים בהתאם לסריקת החומרה - אין סיבה להוריד מודל לGPU אם לא נמצא בסריקה חומרה שכזאת 
+התשובות ברורות לשאלות הקריטיות הן:
+
+  - [A] נלך עם המפה הישנה כפי שהיא מופיע בסקריפט לדוגמא V3
+  - [B] גם כמובן נמשיך במבנה הסקריפט הקודם
+  - [E] הורדה מלאה של מודלים בהתאם לסריקת חומרה מלאה
+
+לגבי הצלילים - בגדול העלאת נקודה מעולה של חיבור שמאל לערוצי שמאל וערוצי ימין לערוצי ימין 
+בגדול אני עדיין צריך לחשוב על זה וגם זה תלוי באמת ברמת הפירוק שנגיע אליה 
+יש גם עוד רעיון של לבצע את הפעולה פעמיים פעם אחת על ערוץ ימין ופעם אחרת על ערוץ שמאל
+זה יכול לעזור להפריד צלילים יותר טוב ולכן נראה לי שנלך על הרעיון הזה - נפריד את ערוצי הסאונד ונבצע את פעולת הפירוק פעמיים פעם אחת לצד ימין ופעם אחת לצד שמאל מה דעתך?
+
+
+===========================================================================
+| תגובה — סמית' (Agent Smith) | קליטת תשובות + ניתוח רעיון L/R | 2026-05-25 |
+===========================================================================
+
+-----------------------------------
+1. אישור התשובות שקיבלתי
+-----------------------------------
+
+[A] ✓ הולכים עם המפה של V3 הסקריפט הדוגמה (בדיוק כפי שהיא).
+    זה אומר:
+      FL/FR = drums highpass>250Hz (מצילות, טרבל)
+      FC    = vocals mono
+      LFE   = drums lowpass<120Hz + bass mono
+      SL/SR = other split L/R
+      BL/BR = other split L/R   ← אותו תוכן כמו SL/SR (כפילות מודעת)
+
+[B] ✓ נשארים עם htdemucs (לא _ft), 4 stems (vocals/drums/bass/other),
+    בלי הפרדת backing vocals ב-v0.1.
+
+[E] ✓ סריקת חומרה תקבע מה להוריד:
+    - GPU NVIDIA  → torch CUDA + demucs (cu121)
+    - GPU AMD     → torch ROCm + demucs (rocm6.0)
+    - GPU Intel   → torch + intel-extension-for-pytorch
+    - CPU בלבד   → torch CPU + demucs
+
+    + ffmpeg encoder לפי החומרה (nvenc/amf/qsv/software).
+
+מצוין — שלושת אלה ברורים וניתן להתחיל לכתוב את הקוד.
+
+
+-----------------------------------
+2. דעה כנה על רעיון ה-L/R Split
+-----------------------------------
+
+שאלת מה דעתי — אז אני אומר ישר: **אני לא ממליץ על זה ל-v0.1.**
+לא כי הרעיון שטותי — הוא יצירתי — אלא כי טכנית הוא **כנראה ירע את ההפרדה**,
+לא ישפר. הסבר:
+
+(a) Demucs **מאומן על stereo**.
+    המודל משתמש ב-cues בין הערוצים (הפרשי עוצמה, פאזה, וזמן) כדי לזהות
+    איפה כל מקור צליל ממוקם במרחב הסטריאו. למשל: וקאל מרכזי מזוהה כי
+    הוא זהה ב-L וב-R. גיטרה מוטית ימינה מזוהה כי היא חזקה ב-R וחלשה ב-L.
+
+(b) כשמזינים **mono לתוך Demucs**, המודל מקבל אותו אות בשני הערוצים
+    (הוא משכפל באופן פנימי). כל ה-cues הסטריאו הופכים ל-"הכל במרכז".
+    התוצאה: ההפרדה ל-stems עלולה להיות **פחות נקייה**, לא יותר.
+
+(c) בנוסף — זמן עיבוד **כפול** (פעמיים Demucs במקום פעם אחת).
+    על GPU טוב זה ~5 דק' במקום ~2.5 דק' לשיר ממוצע. על CPU זה
+    ~30 דק' במקום ~15.
+
+(d) אחרי הפירוק — צריך להרכיב חזרה L+R לכל stem. הבעיה: אם המודל
+    זיהה תו וקאל ב-side-L בזמן T אבל לא זיהה אותו ב-side-R באותו זמן —
+    תקבל artifact מוזר בתוצאה הסופית.
+
+מה כן עוזר לאיכות הפרדה (validated):
+  - htdemucs_ft במקום htdemucs (+5-10% איכות, ~2x זמן)
+  - shifts=4 ב-Demucs (איכות יותר טובה, איטי יותר) — היה בקוד הישן v3
+  - ensemble של מספר מודלים (יקר מאוד, איכות מעולה)
+
+
+-----------------------------------
+3. מה כן יעזור — וכבר קיים בקוד הדוגמה
+-----------------------------------
+
+המטרה האמיתית שלך נשמעת לי: לשמור על המיקום הסטריאו של כל כלי
+ב-7.1 הסופי. **זה כבר נעשה ב-V3 דוגמה** — שים לב:
+
+    [drums_hp_in]highpass=f=250,channelsplit=channel_layout=stereo[drums_l][drums_r];
+    [3:a]channelsplit=channel_layout=stereo[other_l][other_r];
+
+זאת אומרת: Demucs מוציא drums.wav סטריאו. ffmpeg עושה channelsplit אחר כך,
+ו"השמאל של drums" הולך ל-FL ול-SL, "הימין של drums" הולך ל-FR ול-SR.
+אותו דבר עם other.
+
+המיקום הסטריאו של כל כלי נשמר. בלי לרוץ Demucs פעמיים.
+
+
+-----------------------------------
+4. ההמלצה שלי
+-----------------------------------
+
+(1) **ל-v0.1: לא** לבצע L/R-split של הקלט ל-Demucs. ללכת על המבנה של V3
+    בדיוק — Demucs stereo, channelsplit ב-ffmpeg. זה מהיר, מוכח, פשוט.
+
+(2) **אחרי שיש v0.1 עובד**: לתקוע אותו על שיר אחד, להאזין לתוצאה.
+    אם תרגיש שהפירוק לא טוב מספיק — ניצור v0.2-experiment שבודק L/R-split.
+    תאזין ל-A/B (אותו שיר, פעם בדרך הסטנדרטית, פעם בדרך החדשה) ותחליט.
+
+(3) **דרך נוספת לעוד איכות** — אם תרצה ב-v0.2: htdemucs_ft + shifts=4.
+    דרישת חומרה גבוהה יותר, אבל הפרדה ניכרת יותר.
+
+אם אתה מתעקש לעשות L/R-split ב-v0.1 — אני אבצע. רק חשבתי שצריך
+שתשמע את הניתוח לפני שאני שורף 2x זמן GPU ובסוף נקבל איכות נחותה.
+
+
+-----------------------------------
+5. ממתין להחלטה סופית
+-----------------------------------
+
+(סטטוס: ⏸️ הושהה לאישור)
+
+החלטות שצריך כדי להתחיל לכתוב:
+
+[1] L/R-split — מאשר את ההמלצה (לא ב-v0.1), או מתעקש?
+[2] [F] מיקום הסקריפט — שורש הפרויקט (surround-pro.sh) + lib/?
+[3] [G] git init עכשיו עם המבנה הריק, או מחכים שהקוד עובד?
+[4] [H] שאר הפיצ'רים מהדוגמה (cookies, Hebrew, batch, etc.) — נשמרים?
+
+ברגע שיש לי תשובות לארבעה האלה — מתחיל לכתוב קוד.
+
+
+===========================================================================
+| תגובת גיא — תאריך 2026-05-25                                              |
+===========================================================================
+
+1. לא מתעקש על L/R-split (הולכים על stereo standard)
+2. surround-pro.sh בשורש + lib/ — כן
+3. git init רק אחרי שהקוד עובד
+4. כל הפיצ'רים מהדוגמה — נשמרים
+
+
+===========================================================================
+| תגובה — סמית' (Agent Smith) | יישום v0.1 — קוד מוכן לבדיקה | 2026-05-25  |
+===========================================================================
+
+יצרתי את כל מבנה הפרויקט. סקריפטים עוברים syntax check (bash -n).
+לא ביצעתי git init עדיין — מחכים שהקוד עובד על שיר אחד לפחות.
+
+
+-----------------------------------
+1. מה נוצר
+-----------------------------------
+
+surround-pro/
+├── surround-pro.sh         [main entry, 165 שורות]
+├── lib/
+│   ├── detect-hardware.sh  [GPU detection + helpers]
+│   ├── setup-env.sh        [Demucs prefetch]
+│   ├── handle-input.sh     [URL/file/audio/video]
+│   ├── separate-stems.sh   [Demucs orchestration]
+│   ├── build-71.sh         [ffmpeg 7.1 mapping + mux]
+│   └── cleanup.sh          [unique filenames + rm work dirs]
+├── docs/
+│   └── DECISION_LOG.md     [10 החלטות תכנון מתועדות]
+├── input/.gitkeep
+├── output/.gitkeep
+├── README.md               [תיעוד למשתמשי הסקריפט]
+├── CHANGELOG.md            [v0.1.0 entry]
+└── .gitignore              [כבר היה קיים]
+
+הסקריפטים: chmod +x נעשה, syntax check עבר על כולם.
+
+
+-----------------------------------
+2. מה הסקריפט עושה (5 שלבים)
+-----------------------------------
+
+(1) check_dependencies — yt-dlp, ffmpeg, ffprobe, uv
+(2) detect_gpu_backend → nvidia | amd | intel | cpu
+(3) prefetch_demucs_model — uv מוריד torch+demucs המתאימים + מודל htdemucs
+(4) process_source (לכל קובץ):
+     a. get_source_title + safe_title
+     b. is_video_source detection
+     c. fetch_source_to_workdir (yt-dlp או cp + ffmpeg extract audio)
+     d. run_demucs → 4 stems
+     e. build_71_audio → final_7.1.flac (filter_complex של V3)
+     f. אם וידאו: mux_video_with_71_audio → .mkv
+        אם שמע: mv → .flac
+     g. cleanup_work_dir
+
+
+-----------------------------------
+3. איך לבדוק
+-----------------------------------
+
+מצב אינטראקטיבי:
+    cd /media/D/Guy008/Scripts/surround-pro
+    ./surround-pro.sh
+
+מצב CLI (URL):
+    ./surround-pro.sh "https://www.youtube.com/watch?v=ID"
+
+מצב CLI (קובץ מקומי):
+    ./surround-pro.sh /path/to/song.mp3
+
+מצב תיקייה:
+    ./surround-pro.sh /path/to/folder/
+
+שינוי דפדפן לעוגיות:
+    BROWSER_FOR_COOKIES=firefox ./surround-pro.sh ...
+
+
+-----------------------------------
+4. דברים שצריך לוודא בריצה ראשונה
+-----------------------------------
+
+(a) ההורדה הראשונה תיקח זמן — uv יוריד torch (כ-600MB-1.5GB),
+    demucs, ו-htdemucs model (~80MB).
+
+(b) הסקריפט מצפה שהדפדפן Chrome מותקן. אם אין Chrome — הגדר
+    משתנה סביבה: BROWSER_FOR_COOKIES=firefox (או דפדפן אחר).
+
+(c) שלב הזיהוי של היותו וידאו (לפני הורדה מ-YouTube) משתמש
+    ב--list-formats. דורש חיבור לאינטרנט.
+
+(d) המנגנון של uv תקף רק אם uv מותקן ב-PATH. אם uv לא קיים —
+    הסקריפט ייעצר בתחילת הבדיקה.
+
+(e) ה-PATH של ה-stems אחרי Demucs: $work_dir/htdemucs/{drums,vocals,bass,other}.wav
+    זה תלוי בהתנהגות של --filename "{stem}.{ext}" של Demucs.
+    אם בריצה הראשונה תראה שזה לא עובד — תאמר לי, נתאים.
+
+
+-----------------------------------
+5. מה עדיין לא נעשה (מכוון, ל-v0.2+)
+-----------------------------------
+
+* AI enhancement (AudioSR + Resemble Enhance) — לא בגרסה זו.
+* Backing vocals separation (MelBand Karaoke) — לא בגרסה זו.
+* GPU video encoding (hevc_nvenc/amf/qsv) — בגרסה זו "copy" בלבד.
+* L/R-split experiment — לא בגרסה זו (החלטה משותפת).
+* CHANGELOG/README יתעדכנו ב-v0.2 כשנוסיף features.
+
+
+-----------------------------------
+6. סטטוס
+-----------------------------------
+
+(סטטוס: ✅ קוד מוכן, ⏸️ ממתין לבדיקה בפועל על שיר אחד)
+
+הצעד הבא: בדיקה ידנית של גיא. שיר אחד, רצוי קצר.
+אחרי שיעבוד — git init + commit ראשוני + push ל-GitHub.
+אם יש שגיאה — דווח לי את הלוג, אתקן.
+
+שלב הושלם. ממתן לקבצי הוראה חדשים.
+
+
+===========================================================================
+| בקשת בדיקה מגיא — תאריך 2026-05-25                                       |
+===========================================================================
+
+URL לבדיקה: https://www.youtube.com/watch?v=5_dpyRWYo_g
+הערה מגיא: התוכנה צריכה להתקין הכל לבד — uv חסר? התקן! דברים אחרים
+חסרים? התקן! גם זיהוי דפדפן צריך להיות חלק משלב 1.
+
+
+===========================================================================
+| תגובה — סמית' (Agent Smith) | יישום + בדיקה | תאריך 2026-05-25            |
+===========================================================================
+
+-----------------------------------
+1. שינויים שעשיתי לפני הריצה
+-----------------------------------
+
+הוספתי מודול חדש `lib/install-deps.sh`:
+  - ensure_uv()                — מתקין uv דרך pacman, fallback ל-curl
+  - ensure_pacman_cmd()        — מתקין כל חבילה דרך pacman --noconfirm
+  - ensure_core_tools()        — uv, yt-dlp, ffmpeg (ffprobe)
+  - ensure_rocm_runtime_for_amd() — מתקין rocm-hip-runtime אם זיהינו AMD
+
+הוספתי ל-`lib/detect-hardware.sh`:
+  - detect_installed_browser() — מחפש chrome → chromium → brave → firefox
+                                 → vivaldi → opera. ריק אם אין.
+
+עדכנתי `lib/handle-input.sh`:
+  - הסרתי את BROWSER_FOR_COOKIES הקשיח
+  - יצרתי helper ytdlp() — קורא ל-yt-dlp עם או בלי --cookies-from-browser,
+    תלוי אם הדפדפן זוהה
+
+עדכנתי `surround-pro.sh`:
+  - GPU_BACKEND ו-BROWSER_FOR_COOKIES כ-globals שניתנים בשלב 1
+  - שלב 1 עכשיו: ensure_core_tools → detect_browser →
+                 detect_gpu → ensure_rocm → prefetch_demucs
+
+
+-----------------------------------
+2. ריצה ראשונה — מה קרה
+-----------------------------------
+
+הסקריפט:
+  ✓ זיהה ש-uv חסר → התקין דרך pacman
+  ✓ זיהה chrome
+  ✓ זיהה /dev/kfd → backend = amd
+  ✓ זיהה ש-rocm-hip-runtime חסר → התקין (היה רק 31MB, לא 1GB!)
+  ✓ התחיל להוריד torch+rocm6.0 דרך uv (2.2GB)
+  ✗ נכשל בטעינת torch:
+
+      ImportError: libamdhip64.so: cannot enable executable stack
+      as shared object requires: Invalid argument
+
+  זאת בעיה ידועה: PyTorch+ROCm wheel מגיע עם spheres עם דגל
+  "executable stack" שגרעיני Linux מודרניים (glibc 2.41+) מסרבים
+  לטעון. זה לא קשור לקוד שלנו — זה issue ב-PyTorch/AMD.
+
+
+-----------------------------------
+3. תיקון: Fallback אוטומטי ל-CPU
+-----------------------------------
+
+הוספתי ל-`surround-pro.sh`:
+
+    if ! prefetch_demucs_model "$backend"; then
+        if [ "$backend" != "cpu" ]; then
+            print_warn "טעינת torch עם backend '$backend' נכשלה..."
+            backend="cpu"
+            if ! prefetch_demucs_model "$backend"; then
+                exit 1
+            fi
+        fi
+    fi
+
+בריצה השנייה: GPU נכשל → נופל ל-CPU → ממשיך כרגיל.
+
+
+-----------------------------------
+4. ריצה שנייה — הצלחה מלאה
+-----------------------------------
+
+הסקריפט (exit code 0):
+  ✓ uv כבר מותקן (cached)
+  ✓ rocm-hip-runtime כבר מותקן (cached)
+  ✓ torch+rocm כבר ב-uv cache (cached)
+  ✓ ניסה GPU → נכשל → נפל ל-CPU
+  ✓ הוריד torch CPU (~600MB)
+  ✓ הוריד מודל htdemucs
+  ✓ הוריד את הסרטון מ-YouTube
+  ✓ Demucs הפריד 4 stems (CPU mode)
+  ✓ ffmpeg בנה 7.1 FLAC פנימי
+  ✓ Mux של וידאו AV1 + audio FLAC 7.1 → MKV
+  ✓ ניקוי מלא של תיקיית העבודה
+  ✓ קובץ סופי: output/געגועים_7.1.mkv (65MB, 3:47)
+
+
+-----------------------------------
+5. אימות הקובץ הסופי
+-----------------------------------
+
+ffprobe מאשר:
+  - Stream 0: video AV1 (copied as-is from source)
+  - Stream 1: audio FLAC, 8 channels, channel_layout=7.1, 48kHz
+  - Duration: 227.76 שניות (3:47)
+  - Container: MKV
+
+ניתן לפתוח עם VLC או mpv ולוודא שכל הערוצים עובדים.
+
+
+-----------------------------------
+6. נקודות חשובות לבדיקות עתידיות
+-----------------------------------
+
+(a) הריצה הראשונה תיקח 10-20 דק' (התקנות + הורדות)
+(b) הריצה השנייה תהיה מהירה (cache)
+(c) CPU mode איטי — Demucs לקח כמה דקות לשיר של 3:47
+(d) GPU AMD לא עובד בגרסה זו בגלל בעיית execstack של PyTorch
+    → נוסף כ-task ל-v0.2 backlog
+(e) בדיקות עתידיות על מחשבים אחרים:
+    - NVIDIA GPU: צפוי לעבוד טוב (אין execstack issue)
+    - מחשב Intel: לא בדוק, ה-flow פחות בטוח
+
+
+-----------------------------------
+7. סטטוס סופי של v0.1
+-----------------------------------
+
+(סטטוס: ✅ עובד end-to-end על המכשיר הזה ב-CPU mode)
+
+הצעדים הבאים שמתאימים לפי הפרוטוקול:
+  (1) גיא יבדוק את הקובץ הסופי באוזניים (האם נשמע כמו 7.1 איכותי?)
+  (2) אם מאשר → git init + commit + push
+  (3) ניצור v0.2 לטיפול ב:
+      - ROCm execstack fix
+      - בדיקות על מכשירים נוספים
+      - אופציונל: AI enhancement, backing vocals separation, וכו'
+
+שלב הושלם. ממתן לאישור גיא או לקובץ הוראה חדש.
+

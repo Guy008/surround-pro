@@ -1,0 +1,266 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+LIB_DIR="$SCRIPT_DIR/lib"
+OUTPUT_DIR="$SCRIPT_DIR/output"
+
+RED='\e[31m'
+GREEN='\e[32m'
+CYAN='\e[36m'
+YELLOW='\e[33m'
+BOLD='\e[1m'
+RESET='\e[0m'
+
+print_error()   { echo -e "${RED}[שגיאה]${RESET} $1" >&2; }
+print_info()    { echo -e "${CYAN}[מידע]${RESET}  $1"; }
+print_success() { echo -e "${GREEN}[הצלחה]${RESET} $1"; }
+print_warn()    { echo -e "${YELLOW}[אזהרה]${RESET} $1"; }
+print_stage() {
+    echo ""
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "${BOLD}  $1${RESET}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+}
+
+source "$LIB_DIR/install-deps.sh"
+source "$LIB_DIR/detect-hardware.sh"
+source "$LIB_DIR/setup-env.sh"
+source "$LIB_DIR/handle-input.sh"
+source "$LIB_DIR/separate-stems.sh"
+source "$LIB_DIR/build-71.sh"
+source "$LIB_DIR/cleanup.sh"
+
+process_source() {
+    local source_input="$1"
+    local gpu_backend="$2"
+
+    local source_title
+    source_title=$(get_source_title "$source_input")
+    local safe
+    safe=$(safe_title "$source_title")
+
+    print_stage "🎵 מעבד: $source_title"
+
+    local is_video="false"
+    if is_video_source "$source_input"; then
+        is_video="true"
+    fi
+    print_info "סוג מקור: $( [ "$is_video" = "true" ] && echo וידאו || echo שמע )"
+
+    local work_dir="${OUTPUT_DIR}/.${safe}_7.1_work_${RANDOM}"
+    rm -rf "$work_dir"
+    mkdir -p "$work_dir"
+
+    print_stage "שלב 2/5 ▸ הכנת קובץ מקור"
+    fetch_source_to_workdir "$source_input" "$work_dir" "$is_video"
+    print_success "מקור מוכן"
+
+    print_stage "שלב 3/5 ▸ הפרדה משולשת (BS-RoFormer → De-Echo → Demucs)"
+    local audio_file="$work_dir/original_audio.wav"
+
+    print_info "  (3a) הפרדת ווקאל איכותית עם BS-RoFormer..."
+    local sep_vocal_dir="$work_dir/sep_vocal"
+    mkdir -p "$sep_vocal_dir"
+    extract_vocals_with_separator "$audio_file" "$sep_vocal_dir" "$GPU_BACKEND"
+
+    local vocal_wet
+    vocal_wet=$(locate_vocal_wet_file "$sep_vocal_dir")
+    local instrumental
+    instrumental=$(locate_instrumental_file "$sep_vocal_dir")
+    if [ -z "$vocal_wet" ] || [ ! -f "$vocal_wet" ] || [ -z "$instrumental" ] || [ ! -f "$instrumental" ]; then
+        print_error "audio-separator לא יצר vocals/instrumental ב-$sep_vocal_dir"
+        ls -la "$sep_vocal_dir" >&2 || true
+        cleanup_work_dir "$work_dir"
+        return 1
+    fi
+    cp "$vocal_wet"    "$work_dir/vocal_wet.wav"
+    cp "$instrumental" "$work_dir/instrumental.wav"
+    print_success "  vocals + instrumental מופרדים"
+
+    print_info "  (3b) הפרדת dry vocal + echo tail (De-Echo)..."
+    local sep_deecho_dir="$work_dir/sep_deecho"
+    mkdir -p "$sep_deecho_dir"
+    split_vocal_dry_echo "$work_dir/vocal_wet.wav" "$sep_deecho_dir" "$GPU_BACKEND"
+
+    local dry_vocal
+    dry_vocal=$(locate_dry_vocal_file "$sep_deecho_dir")
+    local echo_tail
+    echo_tail=$(locate_echo_tail_file "$sep_deecho_dir")
+    if [ -z "$dry_vocal" ] || [ ! -f "$dry_vocal" ] || [ -z "$echo_tail" ] || [ ! -f "$echo_tail" ]; then
+        print_error "De-Echo לא יצר dry/echo ב-$sep_deecho_dir"
+        ls -la "$sep_deecho_dir" >&2 || true
+        cleanup_work_dir "$work_dir"
+        return 1
+    fi
+    cp "$dry_vocal"  "$work_dir/dry_vocal.wav"
+    cp "$echo_tail"  "$work_dir/echo_tail.wav"
+    print_success "  dry vocal + echo מופרדים"
+
+    print_info "  (3c) Demucs htdemucs_ft על instrumental..."
+    run_demucs "$work_dir/instrumental.wav" "$work_dir" "$GPU_BACKEND"
+    local stems_dir="$work_dir/$(get_demucs_model_name)"
+    if ! verify_demucs_instrumental_stems "$stems_dir"; then
+        print_error "חסר אחד או יותר מ-Demucs (drums/bass/other) ב-$stems_dir"
+        cleanup_work_dir "$work_dir"
+        return 1
+    fi
+    print_success "  drums + bass + other מופרדים"
+    print_success "הפרדה משולשת הושלמה"
+
+    print_stage "שלב 4/5 ▸ מיפוי 7.1 + קידוד FLAC"
+    local audio_71="$work_dir/final_7.1.flac"
+    build_71_audio \
+        "$stems_dir/drums.wav" \
+        "$work_dir/dry_vocal.wav" \
+        "$stems_dir/bass.wav" \
+        "$stems_dir/other.wav" \
+        "$work_dir/echo_tail.wav" \
+        "$audio_71"
+    print_success "קובץ 7.1 פנימי נוצר"
+
+    print_stage "שלב 5/5 ▸ קובץ סופי + ניקוי"
+    local final_ext
+    if [ "$is_video" = "true" ]; then
+        final_ext=".mkv"
+    else
+        final_ext=".flac"
+    fi
+    local final_base="${OUTPUT_DIR}/${safe}_7.1"
+    local final_output
+    final_output=$(get_unique_filename "$final_base" "$final_ext")
+
+    if [ "$is_video" = "true" ]; then
+        local metadata_source
+        if is_url "$source_input"; then
+            metadata_source="$work_dir/video.mp4"
+        else
+            metadata_source="$source_input"
+        fi
+        mux_video_with_71_audio "$work_dir/video.mp4" "$audio_71" "$metadata_source" "$final_output"
+    else
+        mv "$audio_71" "$final_output"
+    fi
+
+    cleanup_work_dir "$work_dir"
+    print_success "קובץ סופי: $final_output"
+}
+
+process_directory() {
+    local dir_path="$1"
+    local gpu_backend="$2"
+    local abs_dir
+    abs_dir=$(readlink -f "$dir_path")
+    local file_count
+    file_count=$(find "$abs_dir" -maxdepth 1 -type f | wc -l)
+    if [ "$file_count" -eq 0 ]; then
+        print_error "תיקייה ריקה: $abs_dir"
+        exit 1
+    fi
+    local i=0
+    while IFS= read -r -d $'\0' file; do
+        i=$((i + 1))
+        print_info "━━ קובץ $i/$file_count: $(basename "$file")"
+        process_source "$file" "$GPU_BACKEND" || print_warn "נכשל בעיבוד: $(basename "$file") — ממשיך"
+    done < <(find "$abs_dir" -maxdepth 1 -type f -print0)
+    print_success "✅ עובדו $file_count קבצים"
+}
+
+prompt_for_input() {
+    local user_input=""
+    read -rp "הזן URL, נתיב קובץ, או נתיב תיקיה: " user_input || true
+    echo "$user_input"
+}
+
+GPU_BACKEND=""
+BROWSER_FOR_COOKIES=""
+
+run_stage_1_scan_and_prepare() {
+    print_stage "שלב 1/5 ▸ סריקת חומרה והכנת סביבה"
+
+    print_info "בודק תלויות ליבה (yt-dlp, ffmpeg, uv)..."
+    if ! ensure_core_tools; then
+        print_error "חסרות תלויות ליבה שלא ניתן להתקין אוטומטית. עצירה."
+        exit 1
+    fi
+    print_success "כל תלויות הליבה מוכנות"
+
+    local browser
+    browser=$(detect_installed_browser)
+    if [ -z "$browser" ]; then
+        print_warn "לא זוהה דפדפן נתמך — yt-dlp יעבוד בלי cookies (עלול להיכשל ב-YouTube)"
+        BROWSER_FOR_COOKIES=""
+    else
+        print_success "דפדפן ל-cookies: $browser"
+        BROWSER_FOR_COOKIES="$browser"
+    fi
+    export BROWSER_FOR_COOKIES
+
+    local backend
+    backend=$(detect_gpu_backend)
+    local gpu_name
+    gpu_name=$(detect_gpu_name "$backend")
+    print_info "GPU backend מזוהה: $backend → $gpu_name"
+
+    if [ "$backend" = "amd" ]; then
+        if ! ensure_rocm_runtime_for_amd "amd"; then
+            print_warn "נופלים ל-CPU mode כי ROCm לא מותקן/לא ניתן להתקנה"
+            backend="cpu"
+        fi
+    fi
+
+    print_info "מוודא ש-Demucs המודל זמין (יוריד torch + מודל בריצה ראשונה — עשוי לקחת דקות)..."
+    if ! prefetch_demucs_model "$backend"; then
+        if [ "$backend" != "cpu" ]; then
+            print_warn "טעינת torch עם backend '$backend' נכשלה — נופלים ל-CPU mode"
+            backend="cpu"
+            print_info "מוריד torch CPU (זה הורדה חדשה כי ה-wheel שונה)..."
+            if ! prefetch_demucs_model "$backend"; then
+                print_error "כשל גם ב-CPU mode — אין דרך להמשיך"
+                exit 1
+            fi
+        else
+            print_error "כשל בהכנת סביבת Demucs (CPU)"
+            exit 1
+        fi
+    fi
+
+    GPU_BACKEND="$backend"
+    print_success "סביבה מוכנה — backend סופי: $GPU_BACKEND"
+
+    ensure_output_dir "$OUTPUT_DIR"
+}
+
+main() {
+    print_stage "🎬 surround-pro v0.1 — Stereo → 7.1 Surround"
+
+    run_stage_1_scan_and_prepare
+
+    local user_input
+    if [ $# -gt 0 ]; then
+        user_input="$1"
+    else
+        user_input=$(prompt_for_input)
+    fi
+
+    if [ -z "${user_input:-}" ]; then
+        print_error "לא הוזן קלט"
+        exit 1
+    fi
+
+    if [ -d "$user_input" ]; then
+        process_directory "$user_input" "$GPU_BACKEND"
+    elif is_url "$user_input"; then
+        process_source "$user_input" "$GPU_BACKEND"
+        print_success "✅ הסתיים"
+    elif [ -f "$user_input" ]; then
+        process_source "$(readlink -f "$user_input")" "$GPU_BACKEND"
+        print_success "✅ הסתיים"
+    else
+        print_error "קלט לא חוקי: $user_input"
+        exit 1
+    fi
+}
+
+main "$@"

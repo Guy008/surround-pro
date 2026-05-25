@@ -2,7 +2,8 @@
 
 המרת כל קובץ מדיה (וידאו / שמע / URL) לאודיו **7.1 Surround** עם הפרדה איכותית מבוססת AI.
 
-> **גרסה נוכחית:** v0.1 — סקריפט bash מודולרי, TUI בלבד, ללא Docker.
+> **גרסה נוכחית:** v0.2 — סקריפט bash מודולרי, TUI בלבד, ללא Docker.
+> Pipeline 3-stage עם **6 stems** (vocals/drums/bass/**guitar**/**piano**/other) + de-echo.
 > נבדק על Arch Linux עם AMD RX 6700 XT ו-NVIDIA RTX 2060 — עובד אוטומטית בשני המקרים.
 
 ---
@@ -113,20 +114,19 @@ surround-pro/
 
 ---
 
-## מיפוי ערוצי 7.1
+## מיפוי ערוצי 7.1 (v0.2)
 
 | ערוץ | תוכן |
 |------|------|
-| **FL** | Drums highpass >250Hz (מצילות) **+ echo_tail** של הזמר (שמאל) |
-| **FR** | Drums highpass >250Hz (מצילות) **+ echo_tail** של הזמר (ימין) |
-| **FC** | **Dry vocal** — זמר ממוקד ויבש, ללא echo |
-| **LFE** | Drums lowpass <120Hz + Bass — תופי באס + כלי בס |
-| **SL** | Other (גיטרות, מקלדות, סינתים, מיתרים) — שמאל |
-| **SR** | Other — ימין |
-| **BL** | Other — שמאל (נפח / עומק חדר) |
-| **BR** | Other — ימין |
+| **FL/FR** | Drums highpass >100Hz (cymbals + snare/tom body) + echo_tail × 0.4 (-8dB) |
+| **FC** | **Dry vocal** — זמר ממוקד ויבש, ללא echo — *נעול בלבד ב-FC* |
+| **LFE** | Drums lowpass <120Hz (kick) + Bass mono |
+| **SL/SR** | **Piano** + other × 0.3 (fill עדין) |
+| **BL/BR** | **Guitar** + other × 0.7 (רוב ה-synths/ambient) |
 
 > **למה ה-echo ב-FL/FR?** ה-echo/reverb של הזמר אמור להתפזר רחב במרחב — בדיוק כפי שהמהנדס המקורי התכוון. ה-FC נשמר נקי ויבש, וה-echo מקבל את ה"רוחב" שלו ברמקולים הקדמיים.
+
+> **למה piano בצדדים וגיטרה אחורה?** העדפה אמנותית — piano יוצר נוכחות חזקה בצדדים, גיטרה+ambient נותנים עומק/אווירה אחורה. ה-"other" (synths, strings) מתפצל 30% לצדדים / 70% לאחור — מבטיח שלא יישארו ערוצים שותקים אם השיר חסר piano/guitar.
 
 ---
 

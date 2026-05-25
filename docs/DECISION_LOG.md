@@ -4,6 +4,42 @@
 
 ---
 
+## v0.2 — 2026-05-25
+
+### [D-020] Demucs htdemucs_ft → htdemucs_6s
+- **החלטה:** מודל ההפרדה מ-`htdemucs_ft` (4 stems, bag of 4) ל-`htdemucs_6s` (6 stems כולל guitar + piano, single model).
+- **למה:** v0.2 דורש routing לפי כלי. htdemucs_6s הוא היחיד שמפצל גיטרה ופסנתר מ"other".
+- **Trade-offs:**
+  - SDR drums יורד מ-10.0 ל-8.5
+  - SDR bass יורד מ-12.0 ל-10.1
+  - piano stem ידוע bleeding/artifacts (Meta)
+  - **חיובי:** אין bag → מהיר יותר.
+- **fallback:** אם בעתיד נצטרך איכות גבוהה יותר ב-stems הקיימים, ניתן לתת flag להחזיר ל-_ft.
+
+### [D-021] מיפוי 7.1 לפי כלי (v0.2)
+- **החלטה:**
+  - FC = dry vocal *(נעול)*
+  - FL/FR = drums highpass>100Hz + echo × 0.4
+  - LFE = drums lowpass<120Hz + bass
+  - SL/SR = piano + other × 0.3
+  - BL/BR = guitar + other × 0.7
+- **למה:** העדפה אומנותית של גיא — piano בצדדים, guitar אחורה. ה"other" מפוצל 30/70 כך שאף ערוץ לא ישתוק בשירים בלי piano/guitar.
+- **טכני:** ffmpeg filter עם `asplit=2` ל"other" כדי לפצל לזרמים זהים לצדדים ולאחור (ffmpeg לא מאפשר לעשות שימוש כפול ב-labeled output).
+
+### [D-022] drums highpass: 250Hz → 100Hz
+- **החלטה:** ה-highpass שמכין FL/FR יורד מ-250Hz ל-100Hz.
+- **למה:** ב-250Hz נכלא רק מצילות+attack. ב-100Hz נכנס גם snare body + tom body (האלמנטים שמייצרים את "הקצב"). גיא ציין שב-v0.1 חסרו תופים חשובים.
+
+### [D-023] echo weight ב-FL/FR: 1.0 → 0.4
+- **החלטה:** ה-echo_tail מקבל weight=0.4 (-8dB) ב-amix עם drums.
+- **למה:** ב-v0.1 ה-echo גבר על התופים. -8dB מאזן — הוא נשמע אבל לא דומיננטי.
+
+### [D-024] drum sub-stem (kick/snare/cymbals) — דחוי
+- **החלטה:** לא משלבים LarsNet/DrumSep ב-v0.2. ממשיכים עם DSP bandpass.
+- **למה:** audio-separator לא תומך native ב-drum sub-stem. LarsNet זמין כ-repo נפרד (562MB מודל) — אינטגרציה לא קלה. תינתן עדיפות אחרי שאר הפיצ'רים.
+
+---
+
 ## v0.1 — 2026-05-25
 
 ### [D-001] בחירת פורמט פרויקט: סקריפט bash יחיד, TUI בלבד

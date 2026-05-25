@@ -4,28 +4,40 @@ build_71_audio() {
     local drums="$1"
     local dry_vocal="$2"
     local bass="$3"
-    local other="$4"
-    local echo_tail="$5"
-    local output_flac="$6"
+    local guitar="$4"
+    local piano="$5"
+    local other="$6"
+    local echo_tail="$7"
+    local output_flac="$8"
 
     ffmpeg -hide_banner -loglevel error -y \
         -i "$drums" \
         -i "$dry_vocal" \
         -i "$bass" \
+        -i "$guitar" \
+        -i "$piano" \
         -i "$other" \
         -i "$echo_tail" \
         -filter_complex "
             [0:a]asplit=2[drums_hp_in][drums_lp_in];
-            [drums_hp_in]highpass=f=250,channelsplit=channel_layout=stereo[drums_l][drums_r];
+            [drums_hp_in]highpass=f=100,channelsplit=channel_layout=stereo[drums_l][drums_r];
             [drums_lp_in]lowpass=f=120,pan=mono|c0=0.5*c0+0.5*c1[drums_bass_mono];
             [2:a]pan=mono|c0=0.5*c0+0.5*c1[bass_mono];
             [drums_bass_mono][bass_mono]amix=inputs=2:normalize=0[lfe];
             [1:a]pan=mono|c0=0.5*c0+0.5*c1[vocals_mono];
-            [3:a]channelsplit=channel_layout=stereo[other_l][other_r];
-            [4:a]channelsplit=channel_layout=stereo[echo_l][echo_r];
-            [drums_l][echo_l]amix=inputs=2:normalize=0[fl_out];
-            [drums_r][echo_r]amix=inputs=2:normalize=0[fr_out];
-            [fl_out][fr_out][vocals_mono][lfe][other_l][other_r][other_l][other_r]join=inputs=8:channel_layout=7.1:map=0.0-FL|1.0-FR|2.0-FC|3.0-LFE|4.0-SL|5.0-SR|6.0-BL|7.0-BR[out]
+            [3:a]channelsplit=channel_layout=stereo[guitar_l][guitar_r];
+            [4:a]channelsplit=channel_layout=stereo[piano_l][piano_r];
+            [5:a]channelsplit=channel_layout=stereo[other_l_src][other_r_src];
+            [other_l_src]asplit=2[other_l_sides][other_l_back];
+            [other_r_src]asplit=2[other_r_sides][other_r_back];
+            [6:a]channelsplit=channel_layout=stereo[echo_l][echo_r];
+            [drums_l][echo_l]amix=inputs=2:weights=1.0 0.4:normalize=0[fl_out];
+            [drums_r][echo_r]amix=inputs=2:weights=1.0 0.4:normalize=0[fr_out];
+            [piano_l][other_l_sides]amix=inputs=2:weights=1.0 0.3:normalize=0[sl_out];
+            [piano_r][other_r_sides]amix=inputs=2:weights=1.0 0.3:normalize=0[sr_out];
+            [guitar_l][other_l_back]amix=inputs=2:weights=1.0 0.7:normalize=0[bl_out];
+            [guitar_r][other_r_back]amix=inputs=2:weights=1.0 0.7:normalize=0[br_out];
+            [fl_out][fr_out][vocals_mono][lfe][sl_out][sr_out][bl_out][br_out]join=inputs=8:channel_layout=7.1:map=0.0-FL|1.0-FR|2.0-FC|3.0-LFE|4.0-SL|5.0-SR|6.0-BL|7.0-BR[out]
         " \
         -map "[out]" \
         -c:a flac -ar 48000 -sample_fmt s16 \

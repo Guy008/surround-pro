@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DEMUCS_MODEL_NAME="htdemucs_ft"
+DEMUCS_MODEL_NAME="htdemucs_6s"
 VOCAL_SEPARATOR_MODEL="model_bs_roformer_ep_368_sdr_12.9628.ckpt"
 DEECHO_SEPARATOR_MODEL="UVR-DeEcho-DeReverb.pth"
 AUDIO_SEPARATOR_MODEL_DIR="${AUDIO_SEPARATOR_MODEL_DIR:-$HOME/.cache/audio-separator-models}"
@@ -123,7 +123,7 @@ locate_echo_tail_file() {
 
 verify_demucs_instrumental_stems() {
     local stems_dir="$1"
-    for stem in drums bass other; do
+    for stem in drums bass guitar piano other; do
         if [ ! -f "$stems_dir/$stem.wav" ]; then
             return 1
         fi

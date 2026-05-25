@@ -7,7 +7,36 @@
 
 ---
 
-## [0.1.0] — 2026-05-25
+## [0.2.0] — 2026-05-25
+
+הרחבת ההפרדה לרמת כלים בודדים + מיפוי 7.1 חכם יותר.
+
+### Changed — Pipeline
+
+- **Demucs htdemucs_ft → htdemucs_6s** — 6 stems במקום 4: vocals, drums, bass, **guitar**, **piano**, other.
+- **מיפוי 7.1 חדש** מנצל את ה-stems החדשים:
+  - **FC** = dry vocal (ללא echo, ממורכז) — *נעול בלבד ב-FC, לא בשום מקום אחר*
+  - **FL/FR** = drums highpass>100Hz (cymbals + body) + echo_tail × 0.4 (-8dB)
+  - **LFE** = drums lowpass<120Hz (kick) + bass mono
+  - **SL/SR** = **piano** + other × 0.3 (fill עדין לערוצים בלי פסנתר)
+  - **BL/BR** = **guitar** + other × 0.7 (רוב ה-ambient/synths)
+- **ffmpeg filter_complex** — 7 inputs (היה 5). `asplit` של "other" כדי לפצל ל-sides/back.
+
+### Changed — Filter tweaks
+
+- **drums highpass: 250Hz → 100Hz** — כדי שגם snare body + tom body יגיעו ל-FL/FR (לא רק מצילות).
+- **echo weight ב-FL/FR: 1.0 → 0.4** — ה-echo כבר לא מאסטר על התופים.
+
+### Trade-offs
+
+- htdemucs_6s SDR נמוך מ-_ft (8.5/10.1 vs 10.0/12.0 ל-drums/bass). הפרדה קצת פחות נקייה בתמורה ל-guitar+piano בנפרד.
+- piano stem ידוע bleeding/artifacts (לפי Meta) — בשירים בלי פסנתר, ערוצי SL/SR עלולים לקבל "פסולת" קלה.
+- htdemucs_6s = single model (לא bag of 4 כמו _ft) — **מהיר יותר** מ-v0.1.
+
+### Tested
+
+- AMD RX 6700 XT — v0.2 גועגועים ✓
+- (more validation in progress)
 
 ראשון. הוטמע ונבדק end-to-end על שתי חומרות שונות (AMD RX 6700 XT, NVIDIA RTX 2060).
 

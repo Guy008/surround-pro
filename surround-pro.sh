@@ -52,6 +52,7 @@ process_source() {
     local work_dir="${OUTPUT_DIR}/.${safe}_7.1_work_${RANDOM}"
     rm -rf "$work_dir"
     mkdir -p "$work_dir"
+    CURRENT_WORK_DIR="$work_dir"
 
     print_stage "שלב 2/5 ▸ הכנת קובץ מקור"
     fetch_source_to_workdir "$source_input" "$work_dir" "$is_video"
@@ -73,6 +74,7 @@ process_source() {
         print_error "audio-separator לא יצר vocals/instrumental ב-$sep_vocal_dir"
         ls -la "$sep_vocal_dir" >&2 || true
         cleanup_work_dir "$work_dir"
+        CURRENT_WORK_DIR=""
         return 1
     fi
     cp "$vocal_wet"    "$work_dir/vocal_wet.wav"
@@ -92,6 +94,7 @@ process_source() {
         print_error "De-Echo לא יצר dry/echo ב-$sep_deecho_dir"
         ls -la "$sep_deecho_dir" >&2 || true
         cleanup_work_dir "$work_dir"
+        CURRENT_WORK_DIR=""
         return 1
     fi
     cp "$dry_vocal"  "$work_dir/dry_vocal.wav"
@@ -104,6 +107,7 @@ process_source() {
     if ! verify_demucs_instrumental_stems "$stems_dir"; then
         print_error "חסר אחד או יותר מ-Demucs (drums/bass/other) ב-$stems_dir"
         cleanup_work_dir "$work_dir"
+        CURRENT_WORK_DIR=""
         return 1
     fi
     print_success "  drums + bass + other מופרדים"
@@ -115,6 +119,8 @@ process_source() {
         "$stems_dir/drums.wav" \
         "$work_dir/dry_vocal.wav" \
         "$stems_dir/bass.wav" \
+        "$stems_dir/guitar.wav" \
+        "$stems_dir/piano.wav" \
         "$stems_dir/other.wav" \
         "$work_dir/echo_tail.wav" \
         "$audio_71"
@@ -144,6 +150,7 @@ process_source() {
     fi
 
     cleanup_work_dir "$work_dir"
+    CURRENT_WORK_DIR=""
     print_success "קובץ סופי: $final_output"
 }
 
@@ -175,10 +182,30 @@ prompt_for_input() {
 
 GPU_BACKEND=""
 BROWSER_FOR_COOKIES=""
+CURRENT_WORK_DIR=""
+
+trap_cleanup_on_exit() {
+    if [ -n "${CURRENT_WORK_DIR:-}" ] && [ -d "${CURRENT_WORK_DIR:-}" ]; then
+        rm -rf "$CURRENT_WORK_DIR"
+        CURRENT_WORK_DIR=""
+    fi
+}
+trap trap_cleanup_on_exit EXIT INT TERM
+
+cleanup_orphaned_work_dirs() {
+    if [ ! -d "$OUTPUT_DIR" ]; then return; fi
+    local count=0
+    while IFS= read -r -d '' orphan; do
+        rm -rf "$orphan" && count=$((count + 1))
+    done < <(find "$OUTPUT_DIR" -maxdepth 1 -type d -name '.*_7.1_work_*' -mmin +60 -print0 2>/dev/null)
+    if [ "$count" -gt 0 ]; then
+        print_info "נוקו $count תיקיות עבודה ישנות מ-output/"
+    fi
+}
 
 show_help() {
     cat << 'HELPEOF'
-surround-pro v0.1 — Stereo → 7.1 Surround AI Pipeline
+surround-pro v0.2 — Stereo → 7.1 Surround AI Pipeline
 
 USAGE:
     ./surround-pro.sh [INPUT]
@@ -208,6 +235,8 @@ HELPEOF
 
 run_stage_1_scan_and_prepare() {
     print_stage "שלב 1/5 ▸ סריקת חומרה והכנת סביבה"
+
+    cleanup_orphaned_work_dirs
 
     local os_id pkg_mgr
     os_id=$(detect_os_id)
@@ -278,7 +307,7 @@ main() {
         exit 0
     fi
 
-    print_stage "🎬 surround-pro v0.1 — Stereo → 7.1 Surround"
+    print_stage "🎬 surround-pro v0.2 — Stereo → 7.1 Surround"
 
     run_stage_1_scan_and_prepare
 

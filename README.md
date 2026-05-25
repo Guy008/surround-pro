@@ -1,10 +1,35 @@
 # surround-pro
 
-המרת כל קובץ מדיה (וידאו / שמע / URL) לאודיו **7.1 Surround** עם הפרדה איכותית מבוססת AI.
+Convert any media (YouTube URL / local audio / video) into a single MKV with **5 audio formats** (7.1 / 5.1 / 2.1 / Stereo / Mono), using AI source separation.
+המרת כל קובץ מדיה ל-MKV יחיד עם 5 פורמטי שמע (7.1 / 5.1 / 2.1 / Stereo / Mono) באמצעות הפרדת מקור בעזרת AI.
 
-> **גרסה נוכחית:** v0.3 — Multi-format MKV (5 פורמטים בקובץ אחד) + חיפוש ביוטיוב לפי שם שיר.
-> Pipeline 3-stage עם **6 stems** (vocals/drums/bass/**guitar**/**piano**/other) + de-echo.
-> נבדק על Arch Linux עם AMD RX 6700 XT ו-NVIDIA RTX 2060 — עובד אוטומטית בשני המקרים.
+> **Latest version:** v1.0 — Docker container available + native Arch/Debian/Ubuntu/Fedora support + search by song name.
+
+---
+
+## 🚀 Quickstart (Docker — easiest, all OSes)
+
+```bash
+git clone https://github.com/Guy008/surround-pro.git
+cd surround-pro
+docker compose build               # one-time, ~2 min
+docker compose run --rm surround-pro "Hadag Nahash Ringing Slap"
+# Output in ./output/<title>_surround.mkv
+```
+
+Open the result in **mpv** or **VLC**, switch audio tracks to pick your format (7.1 / 5.1 / 2.1 / Stereo / Mono).
+
+---
+
+## 🎯 What it does
+
+Single command takes any of:
+- YouTube URL: `./surround-pro.sh "https://..."`
+- Local file: `./surround-pro.sh /path/to/song.mp3`
+- Folder (batch): `./surround-pro.sh /path/to/folder/`
+- Song name (auto-searches YouTube): `./surround-pro.sh "Hadag Nahash Ringing Slap"`
+
+Produces a single MKV with original video (if any) + 5 audio tracks at different surround formats. AI pipeline does instrument-aware separation so different instruments end up in different speakers.
 
 ---
 
@@ -43,7 +68,26 @@
 
 ## הפעלה
 
-### מצב אינטראקטיבי
+### 🐳 Docker (הכי קל — Windows / Mac / Linux)
+
+```bash
+# פעם ראשונה: בניית ה-image (לוקח 1-2 דקות)
+docker compose build
+
+# הפעלה (מצב CPU — ללא GPU):
+docker compose run --rm surround-pro "Hadag Nahash Ringing Slap"
+docker compose run --rm surround-pro "https://www.youtube.com/watch?v=..."
+
+# הפלט נשמר בתיקיית output/ ליד ה-compose file
+```
+
+ה-Docker image מבוסס Ubuntu 24.04 + כל התלויות מובנות בו. כל המודלים יורדים פעם אחת ונשמרים ב-Docker volume (`surround-pro-models`) — שורדים reboot, ריצות עתידיות מהירות.
+
+---
+
+### 🖥️ ריצה ישירה ב-Arch Linux (מהיר יותר עם GPU)
+
+#### מצב אינטראקטיבי
 
 ```bash
 ./surround-pro.sh

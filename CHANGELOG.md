@@ -7,6 +7,72 @@
 
 ---
 
+## [1.0.0] — 2026-05-25
+
+🎉 **שחרור ציבורי ראשון.** הפרויקט מוכן למשתמש קצה: מתקין הכל לבד, רץ בכל מערכת הפעלה (Linux+Docker), ומפיק קובץ אחד עם כל פורמטי השמע.
+
+### Added — שחרור גרסה ראשונה
+
+- **Multi-OS native auto-install** — `lib/install-deps.sh` עכשיו תומך ב-`pacman` / `apt` / `dnf` / `zypper`. משתמשי Debian/Ubuntu/Fedora מקבלים אוטו-התקנה של ffmpeg + yt-dlp (דרך pip לגרסה עדכנית) + patchelf + binutils.
+- **LICENSE — MIT** (Copyright 2026 Guy Levi). פירוט גם על רישיונות הספריות החיצוניות שהפרויקט משלב.
+- **README דו-לשוני** (אנגלית + עברית) עם quickstart ל-Docker בראש.
+
+### Changed
+
+- שם הגרסה ב-`surround-pro.sh` ו-`--help` — `v0.3` → `v1.0`.
+
+### Limitations
+
+- **AI source enhancement** (AudioSR / Resemble Enhance) — לא נכלל. ייתכן בגרסה עתידית כדגל אופציונלי.
+- **AMD GPU ב-Docker** — לא נכלל. דורש image variant נפרד עם ROCm. אפשרי לעתיד.
+- **NVIDIA GPU ב-Docker** — דורש flag `--gpus all` ידני (לא נסיון בהדגמה). אפשרי לעתיד.
+- **WebUI / hosted version** — post-v1.0.
+
+### Tested
+
+- ✅ AMD RX 6700 XT (Arch + ROCm + HSA_OVERRIDE) — 6 שירים end-to-end
+- ✅ NVIDIA RTX 2060 (Arch + CUDA) — 4 שירים end-to-end
+- ✅ Docker (Ubuntu 24.04 base, CPU mode) — שיר אחד end-to-end
+- ✅ Multi-format MKV output — 5 streams נכונים על כל הריצות
+- ✅ Cleanup robust — אין דליפת work dirs
+- ✅ AMD GPU compute auto-fix — patchelf + HSA_OVERRIDE_GFX_VERSION עובד אוטומטית
+- ✅ CPU fallback אם GPU נכשל
+- ✅ Search by name — מצא את ה-URL הנכון לפי שם שיר
+
+---
+
+## [0.4.0] — 2026-05-25
+
+הצעד הגדול להנגשה: **Docker container רשמי**. כל משתמש בעולם עם Docker יכול עכשיו להריץ את הפייפליין בלי להתקין שום דבר (פרט ל-Docker עצמו).
+
+### Added
+
+- **`Dockerfile`** — Ubuntu 24.04 base. מכיל את כל התלויות:
+  - bash, ffmpeg, build-essential, python3-dev (ל-compilation של diffq)
+  - yt-dlp דרך pip (גרסה אחרונה — apt's old, נחסם ע"י YouTube)
+  - patchelf + binutils (לעתיד, אם נוסיף GPU AMD ב-Docker)
+  - uv (התקנה user-local, ואז ל-/usr/local/bin)
+- **`docker-compose.yml`** — מוכן לשימוש, mounts ל-input/output + named volume למודלים שורד reboot.
+- **README** עם הוראות Docker (הופך לדרך המומלצת לרוב המשתמשים).
+
+### Notes & Trade-offs
+
+- ה-Docker רץ ב-**CPU mode** בלבד כרגע. למשתמשי GPU NVIDIA: יש אופציה להוסיף `--gpus all` ידנית. AMD ROCm ב-Docker = work in progress.
+- **כל הריצה הראשונה** מורידה ~3GB (torch CPU + audio-separator + מודלי AI). הריצות אחר כך מהירות (cache).
+- **YouTube cookies:** אין דפדפן ב-Docker. שירים פתוחים יורדים. שירים מוגבלים-גיל / region-locked עלולים להיכשל — פתרון עתידי: mount של cookies.txt.
+
+### Internal Refactor
+
+- `OUTPUT_DIR` הוא עכשיו override-able דרך env var (`$SCRIPT_DIR/output` בברירת מחדל). Docker יכול לכוון ל-`/output` ללא sed magic.
+
+### Validated
+
+- Docker build successful (Ubuntu 24.04 base, ~500MB image)
+- End-to-end pipeline test (5_dpyRWYo_g): MKV עם 6 streams (av1|flac/7.1|flac/5.1|flac/2.1|flac/stereo|flac/mono) ✓
+- CPU mode runs ~15-20 min על שיר של 4 דק' (vs ~5 דק' עם GPU native)
+
+---
+
 ## [0.3.0] — 2026-05-25
 
 הקובץ הסופי הוא MKV אחד עם **5 פורמטים שמע** שהמשתמש בוחר ב-player. גם חיפוש ביוטיוב לפי שם שיר (ללא URL).

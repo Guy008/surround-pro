@@ -1,0 +1,14 @@
+.git/
+.gitignore
+claude/
+docs/
+input/*
+output/*
+!input/.gitkeep
+!output/.gitkeep
+*.log
+WORKFLOW_STATUS.md
+v*.txt
+v*.md
+README.md
+CHANGELOG.md

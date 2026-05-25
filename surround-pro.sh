@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 LIB_DIR="$SCRIPT_DIR/lib"
-OUTPUT_DIR="$SCRIPT_DIR/output"
+OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
 RED='\e[31m'
 GREEN='\e[32m'
@@ -201,7 +201,7 @@ cleanup_orphaned_work_dirs() {
 
 show_help() {
     cat << 'HELPEOF'
-surround-pro v0.3 — Stereo → 7.1 Surround AI Pipeline
+surround-pro v1.0 — Stereo → 7.1 Surround AI Pipeline
 
 USAGE:
     ./surround-pro.sh [INPUT]
@@ -213,7 +213,7 @@ INPUT TYPES:
     search query     Auto-search YouTube      ./surround-pro.sh "Hadag Nahash The Ringing Slap"
     (no arg)         Interactive mode         ./surround-pro.sh
 
-OUTPUT (v0.3+):
+OUTPUT (v1.0):
     Single MKV with 5 audio tracks, switchable in any player (mpv/VLC/ffmpeg):
       Track 1: 7.1 Surround (default)
       Track 2: 5.1 Surround
@@ -313,7 +313,7 @@ main() {
         exit 0
     fi
 
-    print_stage "🎬 surround-pro v0.3 — Stereo → 7.1 Surround"
+    print_stage "🎬 surround-pro v1.0 — Stereo → 7.1 Surround"
 
     run_stage_1_scan_and_prepare
 

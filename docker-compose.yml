@@ -1,0 +1,18 @@
+services:
+  surround-pro:
+    build: .
+    image: surround-pro:latest
+    container_name: surround-pro
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./input:/input
+      - ./output:/output
+      - surround-pro-models:/models
+    environment:
+      - BROWSER_FOR_COOKIES=
+      - AUDIO_SEPARATOR_MODEL_DIR=/models/audio-separator
+
+volumes:
+  surround-pro-models:
+    name: surround-pro-models

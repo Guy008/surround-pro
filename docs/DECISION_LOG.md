@@ -4,6 +4,48 @@
 
 ---
 
+## v1.0 — 2026-05-25 (Public Release)
+
+### [D-031] Multi-OS auto-install (pacman/apt/dnf/zypper)
+- **החלטה:** `lib/install-deps.sh` refactored — generic `ensure_cmd` ו-`run_pkg_install` שמזהים את ה-package manager ופועלים בהתאם. yt-dlp תמיד דרך pip ב-non-Arch (גרסת apt/dnf ישנה מדי).
+- **למה:** v1.0 = שחרור ציבורי. אסור להגביל ל-Arch. משתמשי Ubuntu/Fedora מקבלים אוטו-התקנה זהה.
+- **Limitation:** ROCm install עדיין רק ב-Arch. במערכות אחרות מודיעים למשתמש איך להתקין ידנית, או שהוא משתמש ב-Docker.
+
+### [D-032] LICENSE: MIT
+- **החלטה:** LICENSE קובץ עם MIT (Copyright 2026 Guy Levi). מציין גם רישיונות של ספריות חיצוניות (Demucs, BS-RoFormer, UVR, audio-separator).
+- **למה:** רישיון המקובל ביותר לפרויקטי אודיו open-source. מתיר שימוש מסחרי תוך הגנה מינימלית.
+
+### [D-033] README דו-לשוני
+- **החלטה:** README שומר את התוכן בעברית, אבל מוסיף intro באנגלית + quickstart ל-Docker בראש.
+- **למה:** המטרה היא שחרור ציבורי. רוב המשתמשים בעולם קוראים אנגלית. quickstart ב-Docker = כל אחד יכול להתחיל ב-2 פקודות בלי לקרוא הכל.
+
+### [D-034] AI enhancement deferred to post-v1.0
+- **החלטה:** AudioSR / Resemble Enhance לא נכללים ב-v1.0.
+- **למה:** איכות הפלט ב-v0.3 כבר משביעה רצון של גיא. הוספת AI enhancement = +5 דק' זמן עיבוד, dependency נוסף, ויתרון איכותי שולי שתלוי בשיר. עדיף לשחרר v1.0 stable ולשקול enhance ב-v1.1+.
+
+---
+
+## v0.4 — 2026-05-25
+
+### [D-027] Docker — Ubuntu 24.04, CPU-only ראשון
+- **החלטה:** ה-Docker image הראשון הוא CPU-only על Ubuntu 24.04. ללא תמיכת GPU מובנית.
+- **למה:** GPU ב-Docker דורש variant נפרד לכל vendor (NVIDIA cuda base, AMD rocm base). לבצע את זה כפול image = הרבה זמן. CPU עובד על כולם, מהווה baseline.
+- **עתיד:** v0.5+ ייתן variants ל-GPU.
+
+### [D-028] yt-dlp מ-pip ולא מ-apt ב-Docker
+- **החלטה:** במקום `apt install yt-dlp`, משתמשים ב-`pip3 install --break-system-packages yt-dlp`.
+- **למה:** Ubuntu 24.04 apt = yt-dlp ישן (חודשים אחורה). YouTube משנה את ה-API שלהם הרבה, ו-yt-dlp ישן נחסם עם `HTTP 400 Bad Request`. הגרסה מ-pip תמיד עדכנית.
+
+### [D-029] build-essential ב-Docker
+- **החלטה:** מוסיפים `build-essential` + `python3-dev` ל-Dockerfile.
+- **למה:** `diffq` (תלות של audio-separator) הוא C extension שדורש compilation בהתקנה. ללא gcc → `error: command 'cc' failed: No such file or directory`. ההוספה עולה ~150MB אבל הכרחית.
+
+### [D-030] OUTPUT_DIR override-able דרך env var
+- **החלטה:** `OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"` במקום קשיח.
+- **למה:** Docker רוצה `/output` (volume mount). במקום sed או patch על הקוד, פשוט env var override.
+
+---
+
 ## v0.3 — 2026-05-25
 
 ### [D-025] Multi-format MKV — קובץ סופי יחיד עם כל הפורמטים

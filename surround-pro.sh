@@ -113,9 +113,25 @@ process_source() {
     print_success "  drums + bass + other מופרדים"
     print_success "הפרדה משולשת הושלמה"
 
-    print_stage "שלב 4/5 ▸ מיפוי 7.1 + קידוד FLAC"
-    local audio_71="$work_dir/final_7.1.flac"
-    build_71_audio \
+    print_stage "שלב 4/5 ▸ מיפוי 7.1 + 5.1 + 2.1 + Stereo + Mono לתוך MKV"
+    local final_base="${OUTPUT_DIR}/${safe}_surround"
+    local final_output
+    final_output=$(get_unique_filename "$final_base" ".mkv")
+
+    local video_file=""
+    local metadata_source=""
+    if [ "$is_video" = "true" ]; then
+        video_file="$work_dir/video.mp4"
+        if is_url "$source_input"; then
+            metadata_source="$work_dir/video.mp4"
+        else
+            metadata_source="$source_input"
+        fi
+    elif ! is_url "$source_input"; then
+        metadata_source="$source_input"
+    fi
+
+    build_multi_format_output \
         "$stems_dir/drums.wav" \
         "$work_dir/dry_vocal.wav" \
         "$stems_dir/bass.wav" \
@@ -123,32 +139,12 @@ process_source() {
         "$stems_dir/piano.wav" \
         "$stems_dir/other.wav" \
         "$work_dir/echo_tail.wav" \
-        "$audio_71"
-    print_success "קובץ 7.1 פנימי נוצר"
+        "$video_file" \
+        "$metadata_source" \
+        "$final_output"
+    print_success "קובץ MKV עם 5 פורמטים נוצר"
 
-    print_stage "שלב 5/5 ▸ קובץ סופי + ניקוי"
-    local final_ext
-    if [ "$is_video" = "true" ]; then
-        final_ext=".mkv"
-    else
-        final_ext=".flac"
-    fi
-    local final_base="${OUTPUT_DIR}/${safe}_7.1"
-    local final_output
-    final_output=$(get_unique_filename "$final_base" "$final_ext")
-
-    if [ "$is_video" = "true" ]; then
-        local metadata_source
-        if is_url "$source_input"; then
-            metadata_source="$work_dir/video.mp4"
-        else
-            metadata_source="$source_input"
-        fi
-        mux_video_with_71_audio "$work_dir/video.mp4" "$audio_71" "$metadata_source" "$final_output"
-    else
-        mv "$audio_71" "$final_output"
-    fi
-
+    print_stage "שלב 5/5 ▸ ניקוי"
     cleanup_work_dir "$work_dir"
     CURRENT_WORK_DIR=""
     print_success "קובץ סופי: $final_output"
@@ -205,7 +201,7 @@ cleanup_orphaned_work_dirs() {
 
 show_help() {
     cat << 'HELPEOF'
-surround-pro v0.2 — Stereo → 7.1 Surround AI Pipeline
+surround-pro v0.3 — Stereo → 7.1 Surround AI Pipeline
 
 USAGE:
     ./surround-pro.sh [INPUT]
@@ -214,7 +210,17 @@ INPUT TYPES:
     URL              YouTube etc.             ./surround-pro.sh "https://www.youtube.com/watch?v=..."
     file path        Local media file         ./surround-pro.sh /path/to/song.mp3
     folder path      Batch (all files in dir) ./surround-pro.sh /path/to/folder/
+    search query     Auto-search YouTube      ./surround-pro.sh "Hadag Nahash The Ringing Slap"
     (no arg)         Interactive mode         ./surround-pro.sh
+
+OUTPUT (v0.3+):
+    Single MKV with 5 audio tracks, switchable in any player (mpv/VLC/ffmpeg):
+      Track 1: 7.1 Surround (default)
+      Track 2: 5.1 Surround
+      Track 3: 2.1 (Stereo + LFE)
+      Track 4: Stereo
+      Track 5: Mono
+    For video sources, original video is preserved on track 0.
 
 ENVIRONMENT VARIABLES:
     BROWSER_FOR_COOKIES        Override auto-detected browser (chrome|chromium|brave|firefox|vivaldi|opera)
@@ -307,7 +313,7 @@ main() {
         exit 0
     fi
 
-    print_stage "🎬 surround-pro v0.2 — Stereo → 7.1 Surround"
+    print_stage "🎬 surround-pro v0.3 — Stereo → 7.1 Surround"
 
     run_stage_1_scan_and_prepare
 
@@ -332,8 +338,16 @@ main() {
         process_source "$(readlink -f "$user_input")" "$GPU_BACKEND"
         print_success "✅ הסתיים"
     else
-        print_error "קלט לא חוקי: $user_input"
-        exit 1
+        print_info "לא URL/קובץ/תיקייה — מחפש ביוטיוב: $user_input"
+        local search_url
+        search_url=$(search_youtube_first "$user_input")
+        if [ -z "$search_url" ]; then
+            print_error "לא נמצאה התאמה ב-YouTube ל-: $user_input"
+            exit 1
+        fi
+        print_success "נמצא: $search_url"
+        process_source "$search_url" "$GPU_BACKEND"
+        print_success "✅ הסתיים"
     fi
 }
 

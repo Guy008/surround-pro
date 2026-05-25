@@ -12,6 +12,15 @@ is_url() {
     [[ "$1" == http* ]]
 }
 
+search_youtube_first() {
+    local query="$1"
+    local id
+    id=$(ytdlp --get-id --no-warnings --default-search "ytsearch1" "$query" 2>/dev/null | head -1)
+    if [ -n "$id" ]; then
+        echo "https://www.youtube.com/watch?v=$id"
+    fi
+}
+
 get_source_title() {
     local input="$1"
     if is_url "$input"; then

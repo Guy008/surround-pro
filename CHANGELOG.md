@@ -7,6 +7,37 @@
 
 ---
 
+## [0.3.0] — 2026-05-25
+
+הקובץ הסופי הוא MKV אחד עם **5 פורמטים שמע** שהמשתמש בוחר ב-player. גם חיפוש ביוטיוב לפי שם שיר (ללא URL).
+
+### Added
+
+- **Multi-format MKV output** — קובץ סופי יחיד `*_surround.mkv` עם 5 פסי שמע:
+  1. **7.1 Surround** (default — מי שאין לו רמקולים זה מה שיש)
+  2. **5.1 Surround** (side layout)
+  3. **2.1** (Stereo + LFE)
+  4. **Stereo**
+  5. **Mono**
+  - כל אחד כ-FLAC 48kHz/16-bit ללא דחיסה
+  - כותרות מטא ב-MKV — `mpv`/`VLC` מאפשרים לבחור בטעינה
+- **Search-by-name** — אם הקלט אינו URL/קובץ/תיקייה, הסקריפט מחפש ב-YouTube אוטומטית ומוריד את התוצאה הראשונה:
+  ```bash
+  ./surround-pro.sh "Hadag Nahash The Ringing Slap"
+  ```
+- **Help section** מעודכן עם הפיצ'ר החדש.
+
+### Changed
+
+- שם הקובץ הסופי: `*_7.1.mkv` → `*_surround.mkv` (יותר מדויק — מכיל הכל).
+- `build_71_audio` + `mux_video_with_71_audio` הוחלפו ב-`build_multi_format_output` שעושה הכל ב-pass יחיד של ffmpeg.
+
+### Validated
+
+- AMD RX 6700 XT: search "Hadag Nahash" → MKV עם 5 streams (`h264|flac/7.1|flac/5.1|flac/2.1|flac/stereo|flac/mono`) ✓
+
+---
+
 ## [0.2.0] — 2026-05-25
 
 הרחבת ההפרדה לרמת כלים בודדים + מיפוי 7.1 חכם יותר.

@@ -53,12 +53,26 @@
 ./surround-pro.sh /path/to/folder/        # מעבד את כל הקבצים בתיקייה
 ```
 
+### עזרה ופרטים
+
+```bash
+./surround-pro.sh --help
+```
+
 ### שינוי דפדפן לעוגיות
 
 הסקריפט מזהה אוטומטית את הדפדפן הראשון שמותקן (chrome → chromium → brave → firefox → vivaldi → opera). לשליטה ידנית:
 
 ```bash
 BROWSER_FOR_COOKIES=firefox ./surround-pro.sh https://...
+```
+
+### שינוי מיקום קאש מודלים
+
+מודלי audio-separator נשמרים ב-`~/.cache/audio-separator-models/` (שורד reboot). לשינוי:
+
+```bash
+AUDIO_SEPARATOR_MODEL_DIR=/path/to/cache ./surround-pro.sh ...
 ```
 
 ---
@@ -142,7 +156,7 @@ surround-pro/
 זוהי גרסה v0.1 — איכות מספיקה, מבנה יציב, חוסר תכונות מתקדמות. תכונות מתוכננות לעתיד:
 
 - שיפור AI אופציונלי (AudioSR + Resemble Enhance)
-- שמירה של מודלי audio-separator במיקום קבוע (כרגע `/tmp` ⇒ נמחק על reboot)
 - Re-encoding וידאו עם GPU (nvenc/amf/qsv)
 - Docker (אופציונלי)
-- תמיכה בהפצות נוספות (Debian / Ubuntu / Fedora)
+- אוטו-התקנה גם ב-Debian/Ubuntu (apt) ו-Fedora (dnf)
+- מודלי Demucs / audio-separator שניתן להחליף דרך משתנה סביבה

@@ -57,9 +57,15 @@
 | Guy008MC | AMD RX 6700 XT | ROCm + patchelf + HSA_OVERRIDE | ✓ |
 | Guy008PC | NVIDIA RTX 2060 | CUDA native | ✓ |
 
+### Quality-of-life
+
+- **`--help`** / **`-h`** מציג usage ויוצא.
+- **OS detection** ב-stage 1 — אם לא Arch, מתפרסם warning עם רשימת תלויות שצריך להתקין ידנית, הסקריפט ממשיך.
+- **Persistent audio-separator models** ב-`~/.cache/audio-separator-models/` (ניתן ל-override דרך `AUDIO_SEPARATOR_MODEL_DIR`). שורד reboot.
+
 ### Known Limitations
 
 - ONNXRuntime עובד ב-CPU (BS-RoFormer onnx layer) — לא משפיע משמעותית.
-- audio-separator שומר מודלים ב-`/tmp/audio-separator-models/` שנמחק על reboot (planned fix ב-v0.2).
 - Intel GPU (xpu) — לא נבדק.
-- מערכות אחרות מ-Arch Linux — לא נתמכות עדיין (התלות ב-`pacman` להתקנה אוטומטית).
+- אוטו-התקנה רק ב-Arch (pacman). מערכות אחרות עובדות אם הכלים מותקנים ידנית.
+- אין תמיכה במודלים מותאמים אישית של Demucs / audio-separator (יבוא ב-v0.2+).

@@ -3,6 +3,7 @@
 DEMUCS_MODEL_NAME="htdemucs_ft"
 VOCAL_SEPARATOR_MODEL="model_bs_roformer_ep_368_sdr_12.9628.ckpt"
 DEECHO_SEPARATOR_MODEL="UVR-DeEcho-DeReverb.pth"
+AUDIO_SEPARATOR_MODEL_DIR="${AUDIO_SEPARATOR_MODEL_DIR:-$HOME/.cache/audio-separator-models}"
 
 get_demucs_model_name() { echo "$DEMUCS_MODEL_NAME"; }
 
@@ -29,8 +30,10 @@ extract_vocals_with_separator() {
     local sep_args
     sep_args=$(build_separator_uv_args "$backend")
 
+    mkdir -p "$AUDIO_SEPARATOR_MODEL_DIR"
     uv run $sep_args audio-separator "$input_wav" \
         --model_filename "$VOCAL_SEPARATOR_MODEL" \
+        --model_file_dir "$AUDIO_SEPARATOR_MODEL_DIR" \
         --output_dir "$output_dir" \
         --output_format WAV
 }
@@ -42,8 +45,10 @@ split_vocal_dry_echo() {
     local sep_args
     sep_args=$(build_separator_uv_args "$backend")
 
+    mkdir -p "$AUDIO_SEPARATOR_MODEL_DIR"
     uv run $sep_args audio-separator "$vocal_wav" \
         --model_filename "$DEECHO_SEPARATOR_MODEL" \
+        --model_file_dir "$AUDIO_SEPARATOR_MODEL_DIR" \
         --output_dir "$output_dir" \
         --output_format WAV
 }

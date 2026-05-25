@@ -1,5 +1,22 @@
 #!/bin/bash
 
+detect_os_id() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "${ID:-unknown}"
+    else
+        echo "unknown"
+    fi
+}
+
+detect_pkg_manager() {
+    if command -v pacman >/dev/null 2>&1; then echo "pacman"; return; fi
+    if command -v apt-get >/dev/null 2>&1; then echo "apt"; return; fi
+    if command -v dnf >/dev/null 2>&1; then echo "dnf"; return; fi
+    if command -v zypper >/dev/null 2>&1; then echo "zypper"; return; fi
+    echo "none"
+}
+
 is_pacman_available() {
     command -v pacman >/dev/null 2>&1
 }

@@ -73,6 +73,20 @@
 - **flow:** prefetch_demucs_model מנסה GPU. אם נכשל, מריץ patchelf, מנסה שוב. רק אם זה גם נכשל → CPU fallback (D-013).
 - **השלכה ל-v0.2:** אם יום אחד PyTorch ROCm wheels יבואו תקינים, פשוט patchelf לא ימצא RWE libs ויחזיר 0 — לא יזיק.
 
+### [D-017] מודלי audio-separator ב-`~/.cache/` (לא `/tmp/`)
+- **החלטה:** `--model_file_dir "$HOME/.cache/audio-separator-models"` (override-able דרך `AUDIO_SEPARATOR_MODEL_DIR`).
+- **למה:** ברירת המחדל של audio-separator היא `/tmp/audio-separator-models/`, שנמחק על reboot. ה-models הם 1GB+ — לא נכון להוריד מחדש כל פעם.
+- **השלכה:** uv cache + torch models + audio-separator models = הכל ב-`~/.cache/`, שורד reboot.
+
+### [D-018] תמיכת multi-OS עתידית: OS detection + הודעות ברורות לא-Arch
+- **החלטה:** מוסיפים `detect_os_id` ו-`detect_pkg_manager` ב-`install-deps.sh`. ב-stage 1 מדפיסים את ה-OS. אם זה לא Arch — מתפרסם warning עם רשימת חבילות שצריך להתקין ידנית, אבל הסקריפט ממשיך (אם הכלים כבר שם, יעבוד).
+- **למה:** Goal של "globalization" — לא לחסום משתמשים לא-Arch, אבל גם לא לדמיין שאוטו-התקנה תעבוד שם.
+- **תוכנית עתידית:** ב-v0.2+ ייתכן `apt-get` / `dnf` paths אמיתיים. כרגע: רק detection + הודעה.
+
+### [D-019] `--help` flag
+- **החלטה:** `./surround-pro.sh --help` (ו-`-h`) מדפיס שימוש ויוצא בלי לרוץ.
+- **למה:** משתמשים שמסתכלים על הסקריפט בפעם ראשונה — צריכים נקודת כניסה ברורה.
+
 ### [D-016] בדיקת GPU compute אמיתית + HSA_OVERRIDE_GFX_VERSION
 - **החלטה:** לא מסתפקים ב-`torch.cuda.is_available()` (יחזיר True גם אם הקרנלים לא תואמים). מבצעים compute אמיתי: `torch.zeros(16, device='cuda') + 1` ולוודא שזה מצליח. אם נכשל ב-AMD עם `HIP error: invalid device function` → מנסים `HSA_OVERRIDE_GFX_VERSION=10.3.0`. רק אחרי שגם זה לא עזר → CPU fallback.
 - **למה:** ב-2026-05-25 על מכונת הבדיקה (RX 6700 XT, gfx1031) torch קומפיל בלי kernels ל-gfx1031, רק ל-gfx1030 וכו'. HSA_OVERRIDE מורה לדריבר להשתמש ב-gfx1030 kernels — RX 6700 ו-RX 6800 קרובים מספיק שזה עובד.

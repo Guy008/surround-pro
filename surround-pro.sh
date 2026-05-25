@@ -176,8 +176,48 @@ prompt_for_input() {
 GPU_BACKEND=""
 BROWSER_FOR_COOKIES=""
 
+show_help() {
+    cat << 'HELPEOF'
+surround-pro v0.1 — Stereo → 7.1 Surround AI Pipeline
+
+USAGE:
+    ./surround-pro.sh [INPUT]
+
+INPUT TYPES:
+    URL              YouTube etc.             ./surround-pro.sh "https://www.youtube.com/watch?v=..."
+    file path        Local media file         ./surround-pro.sh /path/to/song.mp3
+    folder path      Batch (all files in dir) ./surround-pro.sh /path/to/folder/
+    (no arg)         Interactive mode         ./surround-pro.sh
+
+ENVIRONMENT VARIABLES:
+    BROWSER_FOR_COOKIES        Override auto-detected browser (chrome|chromium|brave|firefox|vivaldi|opera)
+    AUDIO_SEPARATOR_MODEL_DIR  Where audio-separator caches models (default: ~/.cache/audio-separator-models/)
+
+OUTPUT:
+    Audio source → output/<title>_7.1.flac
+    Video source → output/<title>_7.1.mkv  (original video + new 7.1 audio track)
+
+FIRST-RUN NOTE:
+    First run downloads ~3GB (torch + audio-separator + AI models).
+    All cached for subsequent runs.
+
+PROJECT:
+    https://github.com/Guy008/surround-pro
+HELPEOF
+}
+
 run_stage_1_scan_and_prepare() {
     print_stage "שלב 1/5 ▸ סריקת חומרה והכנת סביבה"
+
+    local os_id pkg_mgr
+    os_id=$(detect_os_id)
+    pkg_mgr=$(detect_pkg_manager)
+    print_info "OS: $os_id | package manager: $pkg_mgr"
+    if [ "$pkg_mgr" != "pacman" ]; then
+        print_warn "התקנה אוטומטית נתמכת רק על Arch Linux. התלויות חייבות להיות מותקנות ידנית:"
+        print_warn "  uv, yt-dlp, ffmpeg/ffprobe, ודפדפן (chrome/chromium/firefox/brave/...)"
+        print_warn "  ל-AMD GPU גם: rocm-hip-runtime + patchelf + binutils"
+    fi
 
     print_info "בודק תלויות ליבה (yt-dlp, ffmpeg, uv)..."
     if ! ensure_core_tools; then
@@ -233,6 +273,11 @@ run_stage_1_scan_and_prepare() {
 }
 
 main() {
+    if [ $# -gt 0 ] && { [ "$1" = "--help" ] || [ "$1" = "-h" ]; }; then
+        show_help
+        exit 0
+    fi
+
     print_stage "🎬 surround-pro v0.1 — Stereo → 7.1 Surround"
 
     run_stage_1_scan_and_prepare
